@@ -5,11 +5,11 @@ from subprocess import Popen, PIPE
 #Imports to be removed
 from pathlib import Path
 from pdm_utils.classes.alchemyhandler import AlchemyHandler
+from pdm_utils.classes import clustal
 
 from Bio import AlignIO
 from Bio.Emboss import Applications
 
-from pdm_utils.classes import clustal
 from pdm_utils.functions import mysqldb_basic
 
 #GLOBAL VARIABLES
@@ -152,7 +152,7 @@ def create_water_cline(query_seq_path, target_seq_path, outfile_path,
 
 #MULTIPLE SEQUENCE TOOLS
 #---------------------------------------------------------------------
-def clustalo(fasta_file, aln_out_path, mat_out_path, outfmt="clustal",
+def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
                                                      infmt="fasta",
                                                      threads=1, verbose=0):
     """
@@ -183,10 +183,15 @@ def clustalo(fasta_file, aln_out_path, mat_out_path, outfmt="clustal",
 
     # Build Clustal Omega command that will produce a clustal-formatted
     # alignment output file and percent identity matrix
-    command = f"clustalo -i {fasta_file} -o {aln_out_path} --distmat-out=" \
-              f"{mat_out_path} --outfmt={outfmt} --infmt={infmt} --full "\
-              f"--percent-id --force --output-order=tree-order " \
+    command = f"clustalo -i {fasta_file} -o {aln_out_path} " \
+              f" --outfmt={outfmt} --infmt={infmt} "\
+              f"--force --output-order=tree-order " \
               f"--threads={threads}"
+
+    if mat_out_path:
+        command = " ".join([command, (f"--distmat-out={mat_out_path} "
+                                       "--full --percent-id")])
+
     for x in range(verbose):
         command += " -v"                # Add verbosity to command
     command = shlex.split(command)      # Convert command to arg list
@@ -283,5 +288,3 @@ def not_main():
     print(f"{neighbors}")
     print("=======================================")
 
-if __name__ == "__main__":
-    main()
