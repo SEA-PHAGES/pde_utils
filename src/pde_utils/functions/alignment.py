@@ -2,14 +2,9 @@ import shlex
 import textwrap
 from subprocess import Popen, PIPE
 
-#Imports to be removed
-from pathlib import Path
-from pdm_utils.classes.alchemyhandler import AlchemyHandler
-from pdm_utils.classes import clustal
-
 from Bio import AlignIO
 from Bio.Emboss import Applications
-
+from pdm_utils.functions import fileio
 from pdm_utils.functions import mysqldb_basic
 
 #GLOBAL VARIABLES
@@ -26,35 +21,6 @@ EMBOSS_TOOL_SETTINGS = {"needle"    : {"gapopen"    : 10,
 
 CLUSTALO_FORMATS = ["fasta", "clustal", "clustal", "phylip", "selex",
                     "stockholm", "vienna"]
-#FILE I/O TOOLS
-#----------------------------------------------------------------------
-def get_pham_genes(engine, phamid):
-    """
-    Queries the database for the geneids and translations found in the
-    indicated pham. Returns a dictionary mapping the pham's geneids to
-    their associated translations. All geneid:translation pairs will be
-    represented (i.e. no redundant gene filtering is done...).
-    :param engine: the Engine allowing access to the database
-    :type engine: sqlalchemy Engine
-    :param phamid: the pham whose genes are to be returned
-    :type phamid: intbiopython pairwise distance
-    :return: pham_genes
-    :rtype: dict
-    """
-    pham_genes = dict()
-
-    # Query will return the pham's GeneIDs and Translations grouped by genes
-    # that share the same sequence
-    query = f"SELECT GeneID, Translation FROM gene WHERE PhamID = {phamid} " \
-            f"ORDER BY Translation, GeneID ASC"
-    query_results = mysqldb_basic.query_dict_list(engine, query)
-
-    for dictionary in query_results:
-        geneid = dictionary["GeneID"]
-        translation = dictionary["Translation"].decode("utf-8")
-        pham_genes[geneid] = translation
-
-    return pham_genes
 
 #PAIRWISE ALIGNMENT TOOLS
 #---------------------------------------------------------------------
@@ -209,8 +175,8 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
     return (aln_out_path, mat_out_path)
 
 def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
-                                                           verbose=0):
-    command = f"hhmake -i {infile_path} -o {hmm_path} -v {verbose}"
+                                                           M=50, verbose=0):
+    command = f"hhmake -i {infile_path} -o {hmm_path} -v {verbose} -M {M}"
 
     if not name is None:
         if not isinstance(name, str):
@@ -249,42 +215,93 @@ def hhalign(query_path, target_path, hhr_path, add_cons=True, verbose=0):
 
     return hhr_path
 
-#################
-# Example Usage #
-#################
-def not_main():
-    # Set up MySQL handler
-    alchemist = AlchemyHandler(database="Actinobacteriophage")
-    alchemist.connect(pipeline=True)
-    engine = alchemist.engine
+#FILE I/O TOOLS
+#----------------------------------------------------------------------
+def get_pham_genes(engine, phamid):
+    """
+    Queries the database for the geneids and translations found in the
+    indicated pham. Returns a dictionary mapping the pham's geneids to
+    their associated translations. All geneid:translation pairs will be
+    represented (i.e. no redundant gene filtering is done...).
+    :param engine: the Engine allowing access to the database
+    :type engine: sqlalchemy Engine
+    :param phamid: the pham whose genes are to be returned
+    :type phamid: intbiopython pairwise distance
+    :return: pham_genes
+    :rtype: dict
+    """
+    pham_genes = dict()
 
-    # Choose a pham, set up infile name, and construct FASTA
-    pham = 11176
-    infile = "/tmp/pham_11176.fasta"
-    genes = get_pham_genes(engine, pham)
-    write_genes_to_fasta(genes, infile)
+    # Query will return the pham's GeneIDs and Translations grouped by genes
+    # that share the same sequence
+    query = f"SELECT GeneID, Translation FROM gene WHERE PhamID = {phamid} " \
+            f"ORDER BY Translation, GeneID ASC"
+    query_results = mysqldb_basic.query_dict_list(engine, query)
 
-    # Run clustal and expand the return value to output filenames
-    out_aln, out_mat = clustalo(infile)
+    for dictionary in query_results:
+        geneid = dictionary["GeneID"]
+        translation = dictionary["Translation"].decode("utf-8")
+        pham_genes[geneid] = translation
 
-    # Parse the identity matrix, get the centroid name and average
-    # distance from centroid to each gene in the pham
-    mat = PercentIdentityMatrix(out_mat)
-    mat.parse_matrix()
-    centroid = mat.get_centroid()
-    neighbors = mat.get_nearest_neighbors(centroid, 50)
-    neighbors = "\n".join(neighbors)
-    average_dist = round(100 - mat.get_average_identity(centroid), 3)
+    return pham_genes
 
-    # Parse the multiple sequence alignment and get centroid sequence w/o gaps
-    aln = MultipleSequenceAlignment(out_aln)
-    aln.parse_alignment()
-    centroid_seq = aln.get_sequence(centroid, gaps=False)
+def create_pham_fastas(engine, phams, aln_dir, data_cache=None,
+                                                  verbose=False):
+    if data_cache is None:
+        data_cache = {}
 
-    print("=======================================")
-    print(f"Centroid gene: {centroid}")
-    print(f"Centroid sequence: {centroid_seq[:16]}...")
-    print(f"Average distance from centroid: {average_dist}%")
-    print(f"{neighbors}")
-    print("=======================================")
+    fasta_path_map = {}
+    for pham in phams:
+        fasta_path = aln_dir.joinpath(".".join([str(pham), "fasta"]))
+        fasta_path_map[pham] = fasta_path
+        
+        gs_to_ts = data_cache.get(pham) 
+        if gs_to_ts is None:
+            gs_to_ts = get_pham_genes(engine, pham)
+            data_cache[pham] = gs_to_ts
+
+        fileio.write_fasta(gs_to_ts, fasta_path)
+
+    return fasta_path_map
+
+def align_pham_fastas(fasta_path_map, mat_out=False, threads=1, verbose=False):
+    if verbose:
+        verbose = 2
+    else:
+        verbose = 0
+
+    mat_path_map = {}
+    for pham, fasta_path in fasta_path_map.items():
+        mat_path = None
+        if mat_out:
+            mat_path = fasta_path.with_name(".".join([str(pham), "mat"]))
+            mat_path_map[pham] = mat_path
+
+        clustalo(fasta_path, fasta_path, outfmt="fasta", mat_out_path=mat_path,
+                                                   threads=threads,
+                                                   verbose=verbose)
+
+    return mat_path_map
+
+def create_pham_hmms(fasta_path_map, name=False, M=50,
+                     add_cons=False, seq_lim=None, verbose=False):
+    if verbose:
+        verbose = 2
+    else:
+        verbose = 0
+
+    hmm_path_map = {}
+    for pham, fasta_path in fasta_path_map.items():
+
+        hmm_path = fasta_path.with_name(".".join([str(pham), "hmm"]))
+        hmm_path_map[pham] = hmm_path
+
+        hmm_name = None
+        if name:
+            hmm_name = str(pham)
+
+        hhmake(fasta_path, hmm_path, name=hmm_name, add_cons=add_cons,
+                M=M, seq_lim=seq_lim, verbose=verbose)
+   
+    return hmm_path_map
 

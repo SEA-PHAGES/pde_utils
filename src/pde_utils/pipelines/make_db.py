@@ -177,10 +177,11 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     aln_dir = db_dir.joinpath("pham_alignments")
     aln_dir.mkdir()
 
-    fasta_path_map = create_pham_fastas(alchemist, values, aln_dir, 
+    fasta_path_map = alignment.create_pham_fastas(alchemist.engine, 
+                                                  values, aln_dir, 
                                                   data_cache=data_cache,
                                                   verbose=verbose)
-    align_pham_fastas(fasta_path_map, threads=threads, 
+    alignment.align_pham_fastas(fasta_path_map, threads=threads, 
                                                   verbose=verbose)
 
     if verbose:
@@ -212,36 +213,6 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
         print(f"Inconsistencies detected in HHsuite database "
               f"at '{db_dir}'.\n  Scrapping database.")
         shutil.rmtree(db_dir)
-
-def create_pham_fastas(alchemist, phams, aln_dir, data_cache=None,
-                                                  verbose=False):
-    if data_cache is None:
-        data_cache = {}
-
-    fasta_path_map = {}
-    for pham in phams:
-        fasta_path = aln_dir.joinpath(".".join([str(pham), "fasta"]))
-        fasta_path_map[pham] = fasta_path
-        
-        gs_to_ts = data_cache.get(pham) 
-        if gs_to_ts is None:
-            gs_to_ts = alignment.get_pham_genes(alchemist.engine, pham)
-            data_cache[pham] = gs_to_ts
-
-        fileio.write_fasta(gs_to_ts, fasta_path)
-
-    return fasta_path_map
-
-def align_pham_fastas(fasta_path_map, threads=1, verbose=False):
-    if verbose:
-        verbose = 2
-    else:
-        verbose = 0
-
-    for pham, fasta_path in fasta_path_map.items():
-        alignment.clustalo(fasta_path, fasta_path, outfmt="fasta", 
-                                                   threads=threads,
-                                                   verbose=verbose)
 
 #HHSUITE DB HELPER FUNCTIONS
 #-----------------------------------------------------------------------------

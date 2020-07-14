@@ -487,7 +487,7 @@ class MultipleSequenceAlignment:
 
         i = self.node_lengths.index(max(self.node_lengths))
         geneid = self.node_names[i]
-        translation = self.alignment[geneid].seq.replace("-", "")
+        translation = str(self.alignment[i].seq).replace("-", "")
 
         return geneid, translation
 
