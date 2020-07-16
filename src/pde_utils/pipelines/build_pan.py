@@ -6,12 +6,16 @@ import time
 from decimal import Decimal
 from pathlib import Path
 
+import shlex
+from subprocess import PIPE, Popen
+
 from networkx import compose
 from networkx import MultiDiGraph, Graph
 from networkx import readwrite
 from pdm_utils.functions import basic
 from pdm_utils.functions import fileio
 from pdm_utils.functions import pipelines_basic
+from pdm_utils.functions import phameration
 
 from pde_utils.classes import clustal
 from pde_utils.functions import alignment
@@ -160,7 +164,7 @@ def parse_build_pan(unparsed_args_list):
 
 def execute_build_pan(alchemist, hhdb_path, folder_path, folder_name, 
                       values=None, verbose=False, filters="", groups=[],
-                      threads=1, M=50, aD=0.15, B=0.5, file_format="csv"):
+                      threads=1, M=50, aD=20, B=0.5, file_format="csv"):
     db_filter = pipelines_basic.build_filter(alchemist, "pham", filters,
                                                            values=values)
 
@@ -190,10 +194,12 @@ def execute_build_pan(alchemist, hhdb_path, folder_path, folder_name,
         maps_tuple = build_pan_base(alchemist.engine, db_filter.values, aln_dir, 
                                     threads=threads, M=M, verbose=verbose)
         aln_obj_dict, mat_obj_dict = read_pan_base(db_filter.values, maps_tuple) 
-        caln, cmat = get_centroid_alignments(aln_dir, aln_obj_dict, 
-                                                      mat_obj_dict, 
-                                                      threads=threads,
-                                                      verbose=verbose)
+        caln  = write_centroid_fastas(aln_dir, aln_obj_dict, mat_obj_dict,
+                                      threads=threads, verbose=verbose)
+
+        cmat = align_centroids(caln, aln_dir, threads=threads)
+        sys.exit(1)
+ 
         pan = build_pan_neighborhoods(alchemist, db_filter.values,
                                       mat_obj_dict, cmat, aD=aD, B=B,
                                       verbose=verbose)
@@ -229,10 +235,9 @@ def read_pan_base(values, base_maps_tuple):
     
     return aln_obj_dict, mat_obj_dict
 
-def get_centroid_alignments(aln_dir, aln_obj_dict, mat_obj_dict, threads=1,
-   verbose=False):
+def write_centroid_fastas(aln_dir, aln_obj_dict, mat_obj_dict, threads=1,
+                                                                 verbose=False):
     caln_path = aln_dir.joinpath("centroids.fasta")
-    cmat_path = aln_dir.joinpath("centroids.mat") 
 
     centroid_seqs = {} 
     for pham in aln_obj_dict.keys():
@@ -244,24 +249,20 @@ def get_centroid_alignments(aln_dir, aln_obj_dict, mat_obj_dict, threads=1,
         else:
             centroid = mat.get_centroid()
             centroid_seq = aln.get_sequence(centroid, gaps=False)
-
+            
         centroid_seqs[pham] = centroid_seq
+
+        #lone_centroid_path = aln_dir.joinpath(f"{pham}_centroid.fasta")
+        #fileio.write_fasta({pham : centroid_seq}, lone_centroid_path)
     
     fileio.write_fasta(centroid_seqs, caln_path)
-    alignment.clustalo(caln_path, caln_path, mat_out_path=cmat_path, 
-                                             outfmt="fasta", threads=threads)
 
-    caln = clustal.MultipleSequenceAlignment(caln_path, fmt="fasta")
-    caln.parse_alignment()
-    cmat = clustal.PercentIdentityMatrix(cmat_path)
-    cmat.parse_matrix()
-
-    return caln, cmat
+    return caln_path
 
 def build_pan_neighborhoods(alchemist, phams, mat_obj_dict, 
                                               cmat, verbose=False,
-                                              aD=15, B=0.5): 
-    pan = Graph()
+                                              aD=20, B=0.5): 
+    pan = MultiDiGraph()
 
     spread_dict = {}
     for pham in phams:
@@ -279,10 +280,6 @@ def build_pan_neighborhoods(alchemist, phams, mat_obj_dict,
         neighbors = cmat.get_nearest_neighbors(str(pham), aD)
         centroid_nodes = cmat.node_names
         for neighbor in neighbors: 
-            edge = pan[pham].get(int(neighbor))
-            if not edge is None:
-                continue
-
             q_spread = spread_dict[pham]
             t_spread = spread_dict[(int(neighbor))]
 
@@ -292,7 +289,7 @@ def build_pan_neighborhoods(alchemist, phams, mat_obj_dict,
             pid = row[target_idx]
             dist = 100 - pid
 
-            DB_sep = round((q_spread + t_spread)/dist, 3)
+            DB_sep = round((t_spread)/dist, 3)
             if DB_sep >= B:
                 pan.add_edge(pham, int(neighbor), Distance=dist, 
                                                   DB=DB_sep)
@@ -342,6 +339,65 @@ def write_graph(graph, file_format, export_path, file_name):
 
 def convert_hmm_db_path(path):
     return Path(path)
+
+
+
+#Methods of clustering centroid sequences
+
+def align_centroids(caln_path, aln_dir, threads=1):
+    cmat_path = aln_dir.joinpath("centroids.mat")
+
+    alignment.clustalo(caln_path, caln_path, mat_out_path=cmat_path,
+                       outfmt="fasta", threads=threads)
+    
+    return cmat_path
+
+def build_centroid_mmseqs_dbs(caln_path, centroid_fasta_map, aln_dir):
+    database_dir = aln_dir.joinpath("mmdb")
+    database_dir.mkdir()
+
+    total_centroid_db = database_dir.joinpath("centroidDB")   
+    phameration.mmseqs_createdb(caln_path, total_centroid_db)
+
+    centroid_db_map = {}
+    for pham, centroid_fasta in centroid_fasta_map.items():
+        centroid_db = database_dir.joinpath(f"{pham}centroidDB") 
+
+        phameration.mmseqs_createdb(centroid_fasta, centroid_db)
+        centroid_db_map[pham] = centroid_db
+
+    return total_centroid_db, centroid_db_map
+
+
+CLUSTER_ARGS = {"tmp_dir" : None,
+                "identity" : None,
+                "coverage" : None, 
+                "e_value" : None,
+                "sens" : None,
+                "steps" : None,
+                "threads" : None,
+                "aln_mode"  : None,
+                "cov_mode" : None,
+                "clu_mode" : None}
+
+
+def clust_centroids(caln_path, aln_dir):
+    db_dir = aln_dir.joinpath("DB_tmp")
+    
+    seq_db = db_dir.joinpath("sequenceDB")
+    clu_db = db_dir.joinpath("clusterDB")
+    psf_db = db_dir.joinpath("seqfileDB")
+    pre_neighborhoods_file = db_dir.joinpath("pre_neighborhoods.fasta")
+    
+    phameration.mmseqs_createdb(caln_path, seq_db)
+    phameration.mmseqs_cluster(seq_db, clu_db, CLUSTER_ARGS)
+    phameration.mmseqs_createseqfiledb(seq_db, clu_db, psf_db)
+    phameration.mmseqs_result2flat(seq_db, seq_db, psf_db, 
+                                        pre_neighborhoods_file) 
+    pre_neighborhoods = phameration.parse_mmseqs_output(
+                                        pre_neighborhoods_file)
+
+    return pre_neighborhoods
 
 if __name__ == "__main__":
     main(sys.argv)

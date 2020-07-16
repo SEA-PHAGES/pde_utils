@@ -128,18 +128,22 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
     Clustal format.
     :param fasta_file: FASTA file containing sequences to be aligned
     :type fasta_file: str
-    :param aln_out: the multiple sequence alignment (MSA) output file
-    :type aln_out: str
-    :param mat_out: the percent identity matrix (PIM) output file
-    :type mat_out: str
+    :param aln_out_path: the multiple sequence alignment (MSA) output file
+    :type aln_out_path: str
+    :type aln_out_path: Path
+    :param mat_out_path: the percent identity matrix (PIM) output file
+    :type mat_out_path: str
+    :type mat_out_path: Path
     :param outfmt: The file format of the alignment to be exported.
     :type outfmt: str
+    :param infmt:  The file format of the sequence file to be read in
+    :type infmt: str
     :param threads: number of threads to use for alignment
     :type threads: int
     :param verbose: verbosity level (0-2)
     :type verbose: int
-    :return: [aln_out, mat_out]
-    :rtype: list
+    :return: Returns the sequence alignment path[0] and distance matrix path[1]
+    :rtype: tuple
     """
     # Make sure verbose is in range(0,3)
     if verbose <= 0:
