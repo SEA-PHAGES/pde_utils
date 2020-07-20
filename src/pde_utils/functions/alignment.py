@@ -158,7 +158,7 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
               f"--force --output-order=tree-order " \
               f"--threads={threads}"
 
-    if mat_out_path:
+    if not mat_out_path is None:
         command = " ".join([command, (f"--distmat-out={mat_out_path} "
                                        "--full --percent-id")])
 
@@ -180,19 +180,34 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
 
 def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
                                                            M=50, verbose=0):
+    """Runs HHsuite3 tool hhmake to make a HMM file from a MSA file.
+
+    :param infile_path: FASTA formatted multiple sequence alignment input file.
+    :type infile_path: str
+    :type infile_path: Path
+    :param hmm_path: Path for the HMM file to be exported to.
+    :type hmm_path: str
+    :type hmm_path: Path
+    :param name: Optional naming for the HMM profile.
+    :type name: str
+    :param add_cons: Option to make the consensus sequence the master sequence.
+    :type add_cons: bool
+    :param seq_lim: Option to limit the number of query sequences displayed.
+    :type seq_lim: int
+    :param verbose: verbosity level (0-2)
+    :type verbose: int
+    :return: Returns the HMM path
+    :rtype: str
+    :rtype: Path
+    """
     command = f"hhmake -i {infile_path} -o {hmm_path} -v {verbose} -M {M}"
 
     if not name is None:
-        if not isinstance(name, str):
-            raise TypeError
-        command = " ".join([command, name])
+        command = " ".join([command, "-name {name}"])
     if add_cons:
         command = " ".join([command, "-add_cons"])
     if seq_lim:
-        if not isinstance(seq_lim, int):
-            raise TypeError
         command = " ".join([command, "-seq {seq_lim}"])
-
     
     with Popen(args=shlex.split(command), stdout=PIPE, stderr=PIPE) as process:
         out, errors = process.communicate()
@@ -203,12 +218,26 @@ def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
 
     return hmm_path
 
-def hhalign(query_path, target_path, hhr_path, add_cons=True, verbose=0):
+def hhalign(query_path, target_path, hhr_path, verbose=0):
+    """Runs HHsuite3 tool hhalign to create a hhr result file from input files.
+
+    :param query_path: HMM profile query input file.
+    :type query_path: str
+    :type query_path: Path
+    :param target_path: HMM profile target input file.
+    :type target_path: str
+    :type target_path: Path
+    :param hhr_path: Path for the result file to be exported to.
+    :type hhr_path: str
+    :type hhr_path: Path
+    :param verbose: verbosity level (0-2)
+    :type verbose: int
+    :return: Returns the hhr result path
+    :rtype: str
+    :rtype: Path
+    """
     command = f"hhalign -i {query_path} -t {target_path} -o {hhr_path} " \
               f"-v {verbose}"
-
-    if add_cons:
-        command = " ".join([command, "-add_cons"])
 
     with Popen(args=shlex.split(command), stdout=PIPE, stderr=PIPE) as process:
         out, errors = process.communicate()
@@ -230,7 +259,7 @@ def get_pham_genes(engine, phamid):
     :param engine: the Engine allowing access to the database
     :type engine: sqlalchemy Engine
     :param phamid: the pham whose genes are to be returned
-    :type phamid: intbiopython pairwise distance
+    :type phamid: str
     :return: pham_genes
     :rtype: dict
     """
@@ -249,8 +278,10 @@ def get_pham_genes(engine, phamid):
 
     return pham_genes
 
-def create_pham_fastas(engine, phams, aln_dir, data_cache=None,
+def create_pham_fasta(engine, phams, aln_dir, data_cache=None,
                                                   verbose=False):
+    """
+    """
     if data_cache is None:
         data_cache = {}
 
@@ -308,4 +339,5 @@ def create_pham_hmms(fasta_path_map, name=False, M=50,
                 M=M, seq_lim=seq_lim, verbose=verbose)
    
     return hmm_path_map
+
 
