@@ -22,10 +22,10 @@ class TestEMBOSSAlign(unittest.TestCase):
 
         self.mock_alignment = Mock()
 
-    @patch("pdm_utils.functions.alignment.AlignIO.read")
-    @patch("pdm_utils.functions.alignment.create_water_cline")
-    @patch("pdm_utils.functions.alignment.create_stretcher_cline")
-    @patch("pdm_utils.functions.alignment.create_needle_cline")
+    @patch("pde_utils.functions.alignment.AlignIO.read")
+    @patch("pde_utils.functions.alignment.create_water_cline")
+    @patch("pde_utils.functions.alignment.create_stretcher_cline")
+    @patch("pde_utils.functions.alignment.create_needle_cline")
     def test_pairwise_align_1(self, needle_mock, stretcher_mock, water_mock, 
                                                     alignio_read_mock):
         """Verify pairwise_align() calls EMBOSS-tool methods."""
@@ -44,10 +44,10 @@ class TestEMBOSSAlign(unittest.TestCase):
                 alignio_read_mock.assert_called_with(self.mock_outfile_seq_path,
                                                      "emboss")
 
-    @patch("pdm_utils.functions.alignment.AlignIO.read")
-    @patch("pdm_utils.functions.alignment.create_water_cline")
-    @patch("pdm_utils.functions.alignment.create_stretcher_cline")
-    @patch("pdm_utils.functions.alignment.create_needle_cline")
+    @patch("pde_utils.functions.alignment.AlignIO.read")
+    @patch("pde_utils.functions.alignment.create_water_cline")
+    @patch("pde_utils.functions.alignment.create_stretcher_cline")
+    @patch("pde_utils.functions.alignment.create_needle_cline")
     def test_pairwise_align_2(self, needle_mock, stretcher_mock, water_mock,
                                                     alignio_read_mock):
         """Verify pairwise_align() calls cline_init with correct parameters."""
@@ -97,10 +97,10 @@ class TestEMBOSSAlign(unittest.TestCase):
                                            self.mock_gapopen, 
                                            self.mock_gapextend)
     
-    @patch("pdm_utils.functions.alignment.AlignIO.read")
-    @patch("pdm_utils.functions.alignment.create_water_cline")
-    @patch("pdm_utils.functions.alignment.create_stretcher_cline")
-    @patch("pdm_utils.functions.alignment.create_needle_cline")
+    @patch("pde_utils.functions.alignment.AlignIO.read")
+    @patch("pde_utils.functions.alignment.create_water_cline")
+    @patch("pde_utils.functions.alignment.create_stretcher_cline")
+    @patch("pde_utils.functions.alignment.create_needle_cline")
     def test_pairwise_align_3(self, needle_mock, stretcher_mock, water_mock,
                                                     alignio_read_mock):
         """Verify pairwise_align() raises from bad tool input.""" 
