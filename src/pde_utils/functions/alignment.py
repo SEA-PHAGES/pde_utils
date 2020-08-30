@@ -1,5 +1,4 @@
 import shlex
-import textwrap
 from subprocess import Popen, PIPE
 
 from Bio import AlignIO
@@ -7,27 +6,27 @@ from Bio.Emboss import Applications
 from pdm_utils.functions import fileio
 from pdm_utils.functions import mysqldb_basic
 
-#GLOBAL VARIABLES
-#----------------------------------------------------------------------
+# GLOBAL VARIABLES
+# ----------------------------------------------------------------------
 EMBOSS_TOOLS = ["needle", "water", "stretcher"]
 
-EMBOSS_TOOL_SETTINGS = {"needle"    : {"gapopen"    : 10,
-                                       "gapextend"  : 0.5},
-                        "stretcher" : {"gapopen"    : 12,
-                                       "gapextend"  : 2},
-                        "water"     : {"gapopen"    : 10,
-                                       "gapextend"  : 0.5}
-                       }
+EMBOSS_TOOL_SETTINGS = {"needle": {"gapopen": 10,
+                                   "gapextend": 0.5},
+                        "stretcher": {"gapopen": 12,
+                                      "gapextend": 2},
+                        "water": {"gapopen": 10,
+                                  "gapextend": 0.5}
+                        }
 
 CLUSTALO_FORMATS = ["fasta", "clustal", "clustal", "phylip", "selex",
                     "stockholm", "vienna"]
 
-#PAIRWISE ALIGNMENT TOOLS
-#---------------------------------------------------------------------
-def pairwise_align(query_seq_path, target_seq_path, outfile_path, 
-                                                        tool="needle",
-                                                        gapopen=None,
-                                                        gapextend=None):
+# PAIRWISE ALIGNMENT TOOLS
+# ---------------------------------------------------------------------
+
+
+def pairwise_align(query_seq_path, target_seq_path, outfile_path,
+                   tool="needle", gapopen=None, gapextend=None):
     """Aligns two sequences from fasta_files using EMBOSS tools.
     :param query_seq_path: Path to sequence A for pairwise alignment.
     :type query_seq_path: Path
@@ -55,15 +54,16 @@ def pairwise_align(query_seq_path, target_seq_path, outfile_path,
         cline_init = create_water_cline
 
     emboss_cline = cline_init(query_seq_path, target_seq_path, outfile_path,
-                                                         gapopen, gapextend)
+                              gapopen, gapextend)
 
     stdout, stderr = emboss_cline()
 
-    alignment = AlignIO.read(outfile_path, "emboss") 
+    alignment = AlignIO.read(outfile_path, "emboss")
     return alignment
 
+
 def create_needle_cline(query_seq_path, target_seq_path, outfile_path,
-                                                         gapopen, gapextend):
+                        gapopen, gapextend):
     """Helper function that retrieves the Needle cline command.
     :param query_seq_path: Path to sequence A for pairwise alignment.
     :type query_seq_path: Path
@@ -80,8 +80,9 @@ def create_needle_cline(query_seq_path, target_seq_path, outfile_path,
 
     return needle_cline
 
+
 def create_stretcher_cline(query_seq_path, target_seq_path, outfile_path,
-                                                         gapopen, gapextend):
+                           gapopen, gapextend):
     """Helper function that retrieves the Needle cline command.
     :param query_seq_path: Path to sequence A for pairwise alignment.
     :type query_seq_path: Path
@@ -98,8 +99,9 @@ def create_stretcher_cline(query_seq_path, target_seq_path, outfile_path,
 
     return stretcher_cline
 
+
 def create_water_cline(query_seq_path, target_seq_path, outfile_path,
-                                                        gapopen, gapextend):
+                       gapopen, gapextend):
     """Helper function that retrieves the Needle cline command.
     :param query_seq_path: Path to sequence A for pairwise alignment.
     :type query_seq_path: Path
@@ -116,11 +118,12 @@ def create_water_cline(query_seq_path, target_seq_path, outfile_path,
 
     return water_cline
 
-#MULTIPLE SEQUENCE TOOLS
-#---------------------------------------------------------------------
+# MULTIPLE SEQUENCE TOOLS
+# ---------------------------------------------------------------------
+
+
 def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
-                                                     infmt="fasta",
-                                                     threads=1, verbose=0):
+             infmt="fasta", threads=1, verbose=0):
     """
     Runs Clustal Omega to generate a multiple sequence alignment (MSA)
     and percent identity matrix (PIM) for the indicated file. Infile is
@@ -158,9 +161,9 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
               f"--force --output-order=tree-order " \
               f"--threads={threads}"
 
-    if not mat_out_path is None:
+    if mat_out_path is not None:
         command = " ".join([command, (f"--distmat-out={mat_out_path} "
-                                       "--full --percent-id")])
+                                      "--full --percent-id")])
 
     for x in range(verbose):
         command += " -v"                # Add verbosity to command
@@ -178,8 +181,9 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
     # the filenames or not
     return (aln_out_path, mat_out_path)
 
+
 def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
-                                                           M=50, verbose=0):
+           M=50, seq_id=90, verbose=0):
     """Runs HHsuite3 tool hhmake to make a HMM file from a MSA file.
 
     :param infile_path: FASTA formatted multiple sequence alignment input file.
@@ -202,13 +206,15 @@ def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
     """
     command = f"hhmake -i {infile_path} -o {hmm_path} -v {verbose} -M {M}"
 
-    if not name is None:
-        command = " ".join([command, "-name {name}"])
+    if name is not None:
+        command = " ".join([command, "-name", name])
     if add_cons:
         command = " ".join([command, "-add_cons"])
-    if seq_lim:
-        command = " ".join([command, "-seq {seq_lim}"])
-    
+    if seq_lim is not None:
+        command = " ".join([command, "-seq", str(seq_lim)])
+    if seq_id is not None:
+        command = " ".join([command, "-id", str(seq_id)])
+
     with Popen(args=shlex.split(command), stdout=PIPE, stderr=PIPE) as process:
         out, errors = process.communicate()
         if verbose > 0 and out:
@@ -217,6 +223,7 @@ def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
             print(errors.decode("utf-8"))
 
     return hmm_path
+
 
 def hhalign(query_path, target_path, hhr_path, verbose=0):
     """Runs HHsuite3 tool hhalign to create a hhr result file from input files.
@@ -248,8 +255,10 @@ def hhalign(query_path, target_path, hhr_path, verbose=0):
 
     return hhr_path
 
-#FILE I/O TOOLS
-#----------------------------------------------------------------------
+# FILE I/O TOOLS
+# ----------------------------------------------------------------------
+
+
 def get_pham_genes(engine, phamid):
     """
     Queries the database for the geneids and translations found in the
@@ -278,8 +287,9 @@ def get_pham_genes(engine, phamid):
 
     return pham_genes
 
+
 def create_pham_fasta(engine, phams, aln_dir, data_cache=None,
-                                                  verbose=False):
+                      verbose=False):
     """
     """
     if data_cache is None:
@@ -289,8 +299,8 @@ def create_pham_fasta(engine, phams, aln_dir, data_cache=None,
     for pham in phams:
         fasta_path = aln_dir.joinpath(".".join([str(pham), "fasta"]))
         fasta_path_map[pham] = fasta_path
-        
-        gs_to_ts = data_cache.get(pham) 
+
+        gs_to_ts = data_cache.get(pham)
         if gs_to_ts is None:
             gs_to_ts = get_pham_genes(engine, pham)
             data_cache[pham] = gs_to_ts
@@ -298,6 +308,7 @@ def create_pham_fasta(engine, phams, aln_dir, data_cache=None,
         fileio.write_fasta(gs_to_ts, fasta_path)
 
     return fasta_path_map
+
 
 def align_pham_fastas(fasta_path_map, mat_out=False, threads=1, verbose=False):
     if verbose:
@@ -313,10 +324,10 @@ def align_pham_fastas(fasta_path_map, mat_out=False, threads=1, verbose=False):
             mat_path_map[pham] = mat_path
 
         clustalo(fasta_path, fasta_path, outfmt="fasta", mat_out_path=mat_path,
-                                                   threads=threads,
-                                                   verbose=verbose)
+                 threads=threads, verbose=verbose)
 
     return mat_path_map
+
 
 def create_pham_hmms(fasta_path_map, name=False, M=50,
                      add_cons=False, seq_lim=None, verbose=False):
@@ -336,8 +347,6 @@ def create_pham_hmms(fasta_path_map, name=False, M=50,
             hmm_name = str(pham)
 
         hhmake(fasta_path, hmm_path, name=hmm_name, add_cons=add_cons,
-                M=M, seq_lim=seq_lim, verbose=verbose)
-   
+               M=M, seq_lim=seq_lim, verbose=verbose)
+
     return hmm_path_map
-
-
