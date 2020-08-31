@@ -116,7 +116,7 @@ def parse_find_primers(unparsed_args):
 def execute_find_primers(alchemist, folder_path=None,
                          folder_name=DEFAULT_FOLDER_NAME, values=None,
                          filters="", groups=[], verbose=False,
-                         prc=0.8):
+                         threads=4, prc=0.8):
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
     working_path = pipelines_basic.create_working_path(
@@ -185,10 +185,11 @@ def execute_find_primers(alchemist, folder_path=None,
             fileio.write_fasta(gs_to_seq, fasta_path)
 
             aln_path = aln_dir.joinpath(f"{pham}.aln")
-            alignment.clustalo(fasta_path, aln_path, outfmt="fasta", threads=8)
+            alignment.clustalo(fasta_path, aln_path, outfmt="fasta",
+                               threads=threads)
 
             hmmp_path = hmmp_dir.joinpath(f"{pham}.hmm")
-            alignment.hhmake(aln_path, hmmp_path, seq_id=100)
+            alignment.hmmbuild(aln_path, hmmp_path)
 
 
 def get_count_phams_in_genes(alchemist, geneids, incounts=None):

@@ -1,3 +1,5 @@
 pdm_utils==0.8.8
 hhsuite==3.2.0
 hmmer==3.3
+mmh3==2.5.1
+bitarray==1.5.3

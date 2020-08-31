@@ -182,16 +182,16 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
     return (aln_out_path, mat_out_path)
 
 
-def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
+def hhmake(infile_path, hhm_path, name=None, add_cons=False, seq_lim=None,
            M=50, seq_id=90, verbose=0):
     """Runs HHsuite3 tool hhmake to make a HMM file from a MSA file.
 
     :param infile_path: FASTA formatted multiple sequence alignment input file.
     :type infile_path: str
     :type infile_path: Path
-    :param hmm_path: Path for the HMM file to be exported to.
-    :type hmm_path: str
-    :type hmm_path: Path
+    :param hhm_path: Path for the HMM file to be exported to.
+    :type hhm_path: str
+    :type hhm_path: Path
     :param name: Optional naming for the HMM profile.
     :type name: str
     :param add_cons: Option to make the consensus sequence the master sequence.
@@ -200,11 +200,11 @@ def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
     :type seq_lim: int
     :param verbose: verbosity level (0-2)
     :type verbose: int
-    :return: Returns the HMM path
+    :return: Returns the HHM path
     :rtype: str
     :rtype: Path
     """
-    command = f"hhmake -i {infile_path} -o {hmm_path} -v {verbose} -M {M}"
+    command = f"hhmake -i {infile_path} -o {hhm_path} -v {verbose} -M {M}"
 
     if name is not None:
         command = " ".join([command, "-name", name])
@@ -222,7 +222,7 @@ def hhmake(infile_path, hmm_path, name=None, add_cons=False, seq_lim=None,
         if verbose > 1 and errors:
             print(errors.decode("utf-8"))
 
-    return hmm_path
+    return hhm_path
 
 
 def hhalign(query_path, target_path, hhr_path, verbose=0):
@@ -254,6 +254,37 @@ def hhalign(query_path, target_path, hhr_path, verbose=0):
             print(errors.decode("utf-8"))
 
     return hhr_path
+
+
+def hmmbuild(infile_path, hmm_path, seq_type="dna", verbose=0):
+    """Runs HMMER tool hmmbuild to make an HMM file from an MSA file.
+
+    :param infile_path: FASTA formatted multiple sequence alignment input file.
+    :type infile_path: str
+    :type infile_path: Path
+    :param hmm_path: Path for the HMM file to be exported to.
+    :type hmm_path: str
+    :type hmm_path: Path
+    """
+    command = "hmmbuild"
+
+    if seq_type.lower() == "dna":
+        command = " ".join([command, "--dna"])
+    elif seq_type.lower() == "rna":
+        command = " ".join([command, "--rna"])
+    elif seq_type.lower() == "amino":
+        command = " ".join([command, "--amino"])
+
+    command = " ".join([command, str(hmm_path), str(infile_path)])
+
+    with Popen(args=shlex.split(command), stdout=PIPE, stderr=PIPE) as process:
+        out, errors = process.communicate()
+        if verbose > 0 and out:
+            print(out.decode("utf-8"))
+        if verbose > 1 and errors:
+            print(errors.decode("utf-8"))
+
+    return hmm_path
 
 # FILE I/O TOOLS
 # ----------------------------------------------------------------------
