@@ -11,13 +11,20 @@ from pathlib import Path
 from pdm_utils.functions import annotation
 from pdm_utils.functions import basic
 from pdm_utils.functions import configfile
+from pdm_utils.functions import mysqldb
 from pdm_utils.functions import pipelines_basic
 from pdm_utils.pipelines import export_db
+
+from pde_utils.classes import kmers
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
 DEFAULT_FOLDER_NAME = (f"{time.strftime('%Y%m%d')}_find_primers")
 
+PHAGE_QUERY = "SELECT * FROM phage"
+GENE_QUERY = "SELECT * FROM gene"
+TRNA_QUERY = "SELECT * FROM trna"
+TMRNA_QUERY = "SELECT * FROM tmrna"
 
 def main(unparsed_args):
     args = parse_find_primers(unparsed_args)
@@ -133,21 +140,26 @@ def execute_find_primers(alchemist, folder_path=None,
         db_filter.values = values
 
         conditionals = conditionals_map[mapped_path]
+
         db_filter.values = db_filter.build_values(where=conditionals)
 
-        genomes = db_filter.values
+        parent_genomes = {}
+        for genome_id in db_filter.values:
+            export_db.get_single_genome(alchemist, genome_id,
+                                        data_cache=parent_genomes)
+
         total_genomes = db_filter.hits()
         if total_genomes == 0:
             print("No database entries received from phage "
                   f" for '{mapped_path.name}'.")
 
-        pipelines_basic.create_working_dir(working_path)
+        pham_gene_map = build_pham_gene_map(db_filter, conditionals,
+                                            verbose=verbose)
 
-        genes = db_filter.transpose("gene.GeneID")
-        pham_histogram = get_count_phams_in_genes(alchemist, genes)
+        pham_histogram = {}
+        for pham, genes in pham_gene_map.items():
+            pham_histogram[pham] = len(genes)
         pham_histogram = basic.sort_histogram(pham_histogram)
-        pham_col = db_filter.get_column("gene.PhamID")
-        phage_col = db_filter.get_column("gene.PhageID")
 
         if verbose:
             print(f"Identifying prevelant phams for '{mapped_path.name}'...")
@@ -163,13 +175,62 @@ def execute_find_primers(alchemist, folder_path=None,
                 print(f"......Pham is represented in {round(pham_per, 3)*100}%"
                       " of currently viewed genomes...")
 
-            db_filter.reset() 
-            db_filter.key = "gene"
-            db_filter.values = db_filter.build_values(
-                                            where=[(pham_col == pham),
-                                                   phage_col.in_(genomes)])
+            gs_to_seq = get_gene_nucleotide_seqs(alchemist,
+                                                 pham_gene_map[pham])
+            conserved_kmer_data = find_conserved_kmers(gs_to_seq)
 
-            gs_to_seq = get_pham_nucleotide_genes(alchemist, db_filter.values)
+            num_conserved_kmers = len(conserved_kmer_data)
+            if num_conserved_kmers == 0:
+                print(f"......Pham {pham} has no conserved kmers...")
+                continue
+
+            if verbose:
+                print(f"......Pham {pham} has {num_conserved_kmers} "
+                      "conserved kmers...")
+
+        sys.exit(1)
+        pipelines_basic.create_working_dir(working_path)
+
+
+def build_pham_gene_map(db_filter, conditionals, verbose=False):
+    gene_col = db_filter.get_column("gene.GeneID")
+    pham_col = db_filter.get_column("gene.PhamID")
+
+    phams = db_filter.transpose("gene.PhamID")
+
+    pham_gene_map = {}
+    for pham in phams:
+        pham_conditionals = conditionals + [(pham_col == pham)]
+        pham_gene_map[pham] = db_filter.build_values(column=gene_col,
+                                                     where=pham_conditionals)
+
+    return pham_gene_map
+
+
+def find_conserved_kmers(seq_id_to_sequence_map, kmer_length=20,
+                         hash_count=None, fpp=0.0001):
+    sequences = list(seq_id_to_sequence_map.values())
+    num_sequences = len(sequences)
+    approx_count = (len(sequences[0]) - kmer_length) * num_sequences
+
+    cmsketch = kmers.CountMinSketch(approx_count,
+                                    hash_count=hash_count, fpp=fpp)
+
+    conserved_kmer_data = {}
+    for seq_id, seq in seq_id_to_sequence_map.items():
+        for i in range(len(seq) - kmer_length):
+            subseq = seq[i:(len(seq)-kmer_length)]
+            cmsketch.add(subseq)
+            if cmsketch.check(subseq) >= num_sequences:
+                kmer_data = conserved_kmer_data.get(subseq, [])
+                kmer_data.append((seq_id, i))
+                conserved_kmer_data[subseq] = kmer_data
+
+    return conserved_kmer_data
+
+
+def map_avg_kmer_pos():
+    pass
 
 
 def get_count_phams_in_genes(alchemist, geneids, incounts=None):
@@ -183,10 +244,12 @@ def get_count_phams_in_genes(alchemist, geneids, incounts=None):
     return pham_histogram
 
 
-def get_pham_nucleotide_genes(alchemist, genes):
+def get_gene_nucleotide_seqs(alchemist, genes, parent_genomes=None):
     cds_list = export_db.parse_feature_data(alchemist, values=genes)
 
-    parent_genomes = {}
+    if parent_genomes is None:
+        parent_genomes = {}
+
     pham_nuc_genes = {}
     for cds in cds_list:
         parent_genome = parent_genomes.get(cds.genome_id)

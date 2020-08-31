@@ -3,7 +3,7 @@ import timeit
 import unittest
 from random import shuffle
 
-from pde_utils.classes.data_structures import (
+from pde_utils.classes.kmers import (
         BloomFilter, BloomFilterStack, CountMinSketch)
 
 NUCLEOTIDE_MAP = {1: "A", 2: "T", 3: "C", 4: "G"}
@@ -17,7 +17,7 @@ def generate_random_nucleotide_seq():
     return "".join(nucleotides)
 
 
-class DataStructuresTest(unittest.TestCase):
+class KmersTest(unittest.TestCase):
     def setUp(self):
         self.sequences_present = []
         self.sequences_absent = []
