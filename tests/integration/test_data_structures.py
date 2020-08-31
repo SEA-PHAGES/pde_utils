@@ -1,8 +1,10 @@
-import unittest
 import random
+import timeit
+import unittest
 from random import shuffle
 
-from pde_utils.classes.data_structures import BloomFilter
+from pde_utils.classes.data_structures import (
+        BloomFilter, BloomFilterStack, CountMinSketch)
 
 NUCLEOTIDE_MAP = {1: "A", 2: "T", 3: "C", 4: "G"}
 
@@ -20,7 +22,7 @@ class DataStructuresTest(unittest.TestCase):
         self.sequences_present = []
         self.sequences_absent = []
 
-        for i in range(100):
+        for i in range(280):
             self.sequences_present.append(generate_random_nucleotide_seq())
 
         absent_seqs = 0
@@ -32,6 +34,8 @@ class DataStructuresTest(unittest.TestCase):
                 self.sequences_absent.append(random_seq)
 
     def test_bloom_filter_1(self):
+        start = timeit.default_timer()
+
         for i in range(1000):
             with self.subTest(trial=i+1):
                 bloomf = BloomFilter(len(self.sequences_present))
@@ -55,7 +59,12 @@ class DataStructuresTest(unittest.TestCase):
 
                 self.assertTrue(false_positives <= 1)
 
+        stop = timeit.default_timer()
+        print(f"Bloom filter test 1: {stop-start}")
+
     def test_bloom_filter_2(self):
+        start = timeit.default_timer()
+
         for i in range(1000):
             with self.subTest(trial=i+1):
                 bloomf = BloomFilter(10, fpp=1)
@@ -78,6 +87,61 @@ class DataStructuresTest(unittest.TestCase):
                             false_positives += 1
 
                 self.assertTrue(false_positives == 5)
+
+        stop = timeit.default_timer()
+        print(f"Bloom filter test 2: {stop-start}")
+
+    def test_bloom_filter_stack_1(self):
+        start = timeit.default_timer()
+
+        target_sequence = generate_random_nucleotide_seq()
+
+        for i in range(1000):
+            with self.subTest(trial=i+1):
+                bfstack = BloomFilterStack(len(self.sequences_present) + 10,
+                                           10)
+
+                for seq in self.sequences_present:
+                    bfstack.add(seq)
+
+                for i in range(10):
+                    bfstack.add(target_sequence)
+
+                self.assertTrue(bfstack.check(target_sequence))
+
+        stop = timeit.default_timer()
+        print(f"Bloom filter stack test 1: {stop-start}")
+
+    def test_count_min_sketch_1(self):
+        start = timeit.default_timer()
+
+        target_sequence = generate_random_nucleotide_seq()
+
+        count_overshoots = 0
+        for i in range(1000):
+            with self.subTest(trial=i+1):
+                cmsketch = CountMinSketch(len(self.sequences_present) + 10)
+
+                for seq in self.sequences_present:
+                    cmsketch.add(seq)
+
+                for i in range(10):
+                    cmsketch.add(target_sequence)
+
+                target_count = cmsketch.check(target_sequence)
+
+                self.assertTrue(target_count >= 10)
+
+                if target_count != 10:
+                    count_overshoots += 1
+
+        if count_overshoots > 0:
+            print("TEST WARNING: CountMinSketch inaccurately counted"
+                  f"{round(count_overshoots/1000, 3)*100}% "
+                  "of trial iterations")
+
+        stop = timeit.default_timer()
+        print(f"Count min-sketch test 1: {stop-start}")
 
 
 if __name__ == "__main__":

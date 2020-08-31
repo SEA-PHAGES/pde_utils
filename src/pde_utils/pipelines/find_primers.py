@@ -11,11 +11,8 @@ from pathlib import Path
 from pdm_utils.functions import annotation
 from pdm_utils.functions import basic
 from pdm_utils.functions import configfile
-from pdm_utils.functions import fileio
 from pdm_utils.functions import pipelines_basic
 from pdm_utils.pipelines import export_db
-
-from pde_utils.functions import alignment
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
@@ -146,13 +143,6 @@ def execute_find_primers(alchemist, folder_path=None,
 
         pipelines_basic.create_working_dir(working_path)
 
-        fasta_dir = working_path.joinpath("fasta")
-        fasta_dir.mkdir()
-        aln_dir = working_path.joinpath("aln")
-        aln_dir.mkdir()
-        hmmp_dir = working_path.joinpath("hmmp")
-        hmmp_dir.mkdir()
-
         genes = db_filter.transpose("gene.GeneID")
         pham_histogram = get_count_phams_in_genes(alchemist, genes)
         pham_histogram = basic.sort_histogram(pham_histogram)
@@ -173,23 +163,13 @@ def execute_find_primers(alchemist, folder_path=None,
                 print(f"......Pham is represented in {round(pham_per, 3)*100}%"
                       " of currently viewed genomes...")
 
-            db_filter.reset()
+            db_filter.reset() 
             db_filter.key = "gene"
             db_filter.values = db_filter.build_values(
                                             where=[(pham_col == pham),
                                                    phage_col.in_(genomes)])
 
             gs_to_seq = get_pham_nucleotide_genes(alchemist, db_filter.values)
-
-            fasta_path = fasta_dir.joinpath(f"{pham}.fasta")
-            fileio.write_fasta(gs_to_seq, fasta_path)
-
-            aln_path = aln_dir.joinpath(f"{pham}.aln")
-            alignment.clustalo(fasta_path, aln_path, outfmt="fasta",
-                               threads=threads)
-
-            hmmp_path = hmmp_dir.joinpath(f"{pham}.hmm")
-            alignment.hmmbuild(aln_path, hmmp_path)
 
 
 def get_count_phams_in_genes(alchemist, geneids, incounts=None):
