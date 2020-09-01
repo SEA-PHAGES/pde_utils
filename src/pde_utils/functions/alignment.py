@@ -321,8 +321,6 @@ def get_pham_genes(engine, phamid):
 
 def create_pham_fasta(engine, phams, aln_dir, data_cache=None,
                       verbose=False):
-    """
-    """
     if data_cache is None:
         data_cache = {}
 
