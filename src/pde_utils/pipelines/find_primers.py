@@ -8,12 +8,14 @@ import sys
 import time
 from pathlib import Path
 
+from numpy import std
 from pdm_utils.functions import annotation
 from pdm_utils.functions import basic
 from pdm_utils.functions import configfile
 from pdm_utils.functions import mysqldb
 from pdm_utils.functions import pipelines_basic
 from pdm_utils.pipelines import export_db
+from primer3 import calcTm
 
 from pde_utils.classes import kmers
 
@@ -120,7 +122,7 @@ def parse_find_primers(unparsed_args):
 def execute_find_primers(alchemist, folder_path=None,
                          folder_name=DEFAULT_FOLDER_NAME, values=None,
                          filters="", groups=[], verbose=False,
-                         threads=4, prc=0.8):
+                         threads=4, prc=0.8, max_std=500):
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
     working_path = pipelines_basic.create_working_path(
@@ -175,8 +177,23 @@ def execute_find_primers(alchemist, folder_path=None,
                 print(f"......Pham is represented in {round(pham_per, 3)*100}%"
                       " of currently viewed genomes...")
 
-            gs_to_seq = get_gene_nucleotide_seqs(alchemist,
-                                                 pham_gene_map[pham])
+            pham_cds = export_db.parse_feature_data(alchemist, 
+                                                    values=pham_gene_map[pham])
+
+            starts = []
+            avg_start = 0
+            for cds in pham_cds:
+                starts.append(cds.start)
+                avg_start += cds.start
+            avg_start = int(round(avg_start/len(pham_cds), 0))
+            start_std = std(starts)
+
+            if start_std > max_std:
+                print(f"......Pham {pham} has unstable synteny...")
+                continue
+
+            gs_to_seq = get_cds_nucleotide_seqs(alchemist, pham_cds, 
+                                                data_cache=parent_genomes)
             conserved_kmer_data = find_conserved_kmers(gs_to_seq)
 
             num_conserved_kmers = len(conserved_kmer_data)
@@ -187,7 +204,31 @@ def execute_find_primers(alchemist, folder_path=None,
             if verbose:
                 print(f"......Pham {pham} has {num_conserved_kmers} "
                       "conserved kmers...")
+                
+            thermostable_oligomers = find_thermostabilize_oligomers(
+                                                        conserved_kmer_data)
+            num_stable_oligomers = len(thermostable_oligomers)
 
+            if num_stable_oligomers == 0:
+                print(f"......Pham {pham} has no stable oligomers...")
+                continue
+            
+            if verbose:
+                print(f"......Pham {pham} has {num_stable_oligomers} "
+                      "stable putative primer oligomers.")  
+
+            for oligomer, data in thermostable_oligomers.items():
+                avg_oligomer_start = 0
+                for kmer_data in data:
+                    avg_oligomer_start += kmer_data[1]
+                avg_oligomer_start = int(round(avg_oligomer_start/len(data), 
+                                               0))
+
+                avg_oligomer_start = avg_start + avg_oligomer_start
+            
+                print(f".........Oligomer '{oligomer}' is located at "
+                      f"{avg_oligomer_start}")
+        
         sys.exit(1)
         pipelines_basic.create_working_dir(working_path)
 
@@ -219,7 +260,7 @@ def find_conserved_kmers(seq_id_to_sequence_map, kmer_length=20,
     conserved_kmer_data = {}
     for seq_id, seq in seq_id_to_sequence_map.items():
         for i in range(len(seq) - kmer_length):
-            subseq = seq[i:(len(seq)-kmer_length)]
+            subseq = seq[i:i+kmer_length]
             cmsketch.add(subseq)
             if cmsketch.check(subseq) >= num_sequences:
                 kmer_data = conserved_kmer_data.get(subseq, [])
@@ -229,8 +270,13 @@ def find_conserved_kmers(seq_id_to_sequence_map, kmer_length=20,
     return conserved_kmer_data
 
 
-def map_avg_kmer_pos():
-    pass
+def find_thermostabilize_oligomers(conserved_kmer_data, tmMin=52, tmMax=58):
+    thermostable_oligomers = {}
+    for oligomer, data in conserved_kmer_data.items(): 
+        if not (calcTm(oligomer) < tmMin or calcTm(oligomer) > tmMax):
+            thermostable_oligomers[oligomer] = data
+
+    return thermostable_oligomers
 
 
 def get_count_phams_in_genes(alchemist, geneids, incounts=None):
@@ -244,20 +290,18 @@ def get_count_phams_in_genes(alchemist, geneids, incounts=None):
     return pham_histogram
 
 
-def get_gene_nucleotide_seqs(alchemist, genes, parent_genomes=None):
-    cds_list = export_db.parse_feature_data(alchemist, values=genes)
-
-    if parent_genomes is None:
-        parent_genomes = {}
+def get_cds_nucleotide_seqs(alchemist, cds_list, data_cache=None):
+    if data_cache is None:
+        data_cache = {}
 
     pham_nuc_genes = {}
     for cds in cds_list:
-        parent_genome = parent_genomes.get(cds.genome_id)
+        parent_genome = data_cache.get(cds.genome_id)
 
         if parent_genome is None:
             parent_genome = export_db.get_single_genome(
                                         alchemist, cds.genome_id,
-                                        data_cache=parent_genomes)
+                                        data_cache=data_cache)
 
         cds.set_seqfeature()
         cds.set_nucleotide_sequence(
