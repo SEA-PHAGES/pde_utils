@@ -17,6 +17,7 @@ from pdm_utils.functions import configfile
 from pdm_utils.functions import pipelines_basic
 from pdm_utils.pipelines import export_db
 
+from pde_utils.classes import primer_TD
 from pde_utils.functions import primers
 from pde_utils.functions import seq
 
@@ -171,16 +172,16 @@ def execute_find_primers(alchemist, folder_path=None,
                                     tmMax=tmMax, hpn_dG_min=hpn_dG_min,
                                     homo_dG_min=homo_dG_min, GC_max=GC_max)
 
-        primer_pairs = test_primer_pairs(primer_pairs, genome_map,
-                                         verbose=verbose,
-                                         hetero_dG_min=hetero_dG_min)
+        primer_pair_TDs = test_primer_pairs(primer_pairs, genome_map,
+                                            verbose=verbose,
+                                            hetero_dG_min=hetero_dG_min)
 
         if verbose:
-            print(f"Selecting primer_pair from {len(primer_pairs)} "
+            print(f"Selecting primer_pair from {len(primer_pair_TDs)} "
                   f"primer pairs for '{mapped_path}'...")
 
-        primer_pair = select_primer_pair(primer_pairs)
-        print(primer_pair)
+        opt_primer_pair = select_primer_pair(primer_pair_TDs)
+        print(opt_primer_pair)
         sys.exit(1)
         pipelines_basic.create_working_dir(working_path)
 
@@ -310,29 +311,39 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
     return primer_pairs
 
 
-def test_primer_pairs(primer_pairs, genomes, verbose=False,
-                      hetero_dG_min=-1000):
-    tested_primer_pairs = []
+def test_primer_pairs(primer_pairs, genome_map, verbose=False,
+                      hetero_dG_min=-1000, Tm_gap_max=5, anneal_gap_max=5):
+    tested_primer_pair_TDs = []
 
     num_pairs = len(primer_pairs)
     for i in range(num_pairs):
         primer_pair = primer_pairs[i]
+
+        for genome_id, genome in genome_map.items():
+            primer_pair_TD = primer_TD.PrimerPairTDynamics(
+                                                    primer_pair["forward"],
+                                                    primer_pair["reverse"],
+                                                    genome=str(genome.seq))
         if verbose:
             print(f"...Testing primer pair {i} out of "
                   f"{num_pairs} putative primers...")
 
-        if primers.check_heterodimer(
-                        primer_pair["forward"], primer_pair["reverse"],
-                        delG_min=hetero_dG_min):
+        if primer_pair_TD.Tm_gap > Tm_gap_max:
             continue
 
-        tested_primer_pairs.append(primer_pair)
+        if primer_pair_TD.heterodimer.dg < hetero_dG_min:
+            continue
 
-    return tested_primer_pairs
+        if primer_pair_TD.annealing_Tm_gap > anneal_gap_max:
+            continue
+
+        tested_primer_pair_TDs.append(primer_pair_TD)
+
+    return tested_primer_pair_TDs
 
 
-def select_primer_pair(primer_pairs):
-    return primer_pairs[0]
+def select_primer_pair(primer_pair_TDs):
+    return primer_pair_TDs[0]
 
 
 # TO FIX IN BASIC
