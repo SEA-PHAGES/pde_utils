@@ -1,9 +1,11 @@
+from Bio.Seq import Seq
+
 from pde_utils.classes import primer_TD
 
 
 def get_stable_oligomer(oligomer, tmMin=52, tmMax=58, hpn_dG_min=-2000,
                         homo_dG_min=-5000, GC_max=60, max_runs=4):
-    oligomer_TD = primer_TD.OligomerTDynamics(oligomer)
+    oligomer_TD = primer_TD.Oligomer(oligomer)
 
     stable = ((oligomer_TD.Tm >= tmMin and oligomer_TD.Tm <= tmMax) and
               (oligomer_TD.hairpin.dg > hpn_dG_min) and
@@ -19,11 +21,15 @@ def get_stable_oligomer(oligomer, tmMin=52, tmMax=58, hpn_dG_min=-2000,
 
 def write_primer_txt_file(primer_pair, file_path):
     with file_path.open(mode="w") as filehandle:
-        filehandle.write(f"Annealing Temp: {primer_pair.annealing_Tm}\u00BAC")
-        filehandle.write("\n\n")
+        filehandle.write(
+                "<pdm_utils find_primers analysis>\n"
+                f"Primer rating penalty: {round(primer_pair.rating, 2)}\n"
+                f"Annealing Temp: {primer_pair.annealing_Tm}\u00BAC\n\n")
 
-        filehandle.write(f"~{primer_pair.start}......\n"
-                         f"{primer_pair.fwd.seq}......\n"
+        filehandle.write(f"~{primer_pair.start}...\n"
+                         f"5'[{primer_pair.fwd.seq}]      3'\n"
+                         f"3' {Seq(primer_pair.fwd.seq).reverse_complement()}"
+                         "...... 5'\n"
                          f"Forward Melting Temp: {primer_pair.fwd.Tm}\u00BAC\n"
                          "Forward Homodimerization:\n"
                          f"\t\u0394G: {primer_pair.fwd.homodimer.dg}\n"
@@ -44,9 +50,10 @@ def write_primer_txt_file(primer_pair, file_path):
         filehandle.write("\n")
 
         filehandle.write(
-                     "......~"
-                     f"{primer_pair.start + len(primer_pair.product)}\n"
-                     f"......{primer_pair.rvs.seq}\n"
+                     f"...~{primer_pair.start + len(primer_pair.product)}\n"
+                     f"5'     [{primer_pair.rvs.seq}] 3'\n"
+                     f"3'......{Seq(primer_pair.rvs.seq).reverse_complement()}"
+                     "  5\n"
                      f"Reverse Melting Temp: {primer_pair.rvs.Tm}\u00BAC\n"
                      "Reverse Homodimerization:\n"
                      f"\t\u0394G: {primer_pair.rvs.homodimer.dg}\n"

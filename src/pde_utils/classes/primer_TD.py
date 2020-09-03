@@ -9,7 +9,7 @@ from primer3.bindings import calcEndStability
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
-class OligomerTDynamics:
+class Oligomer:
     def __init__(self, oligomer, start=None, max_runs=4):
         base_runs_format = re.compile("".join(["A{", str(max_runs), "}|"]) +
                                       "".join(["T{", str(max_runs), "}|"]) +
@@ -53,18 +53,18 @@ class OligomerTDynamics:
         return rating
 
 
-class PrimerPairTDynamics:
+class PrimerPair:
     def __init__(self, fwd, rvs, start=None, end=None, genome=None):
         if isinstance(fwd, str):
-            self.fwd = OligomerTDynamics(fwd)
-        elif isinstance(fwd, OligomerTDynamics):
+            self.fwd = Oligomer(fwd)
+        elif isinstance(fwd, Oligomer):
             self.fwd = fwd
         else:
             raise TypeError
 
         if isinstance(rvs, str):
-            self.rvs = OligomerTDynamics(rvs)
-        elif isinstance(fwd, OligomerTDynamics):
+            self.rvs = Oligomer(rvs)
+        elif isinstance(fwd, Oligomer):
             self.rvs = rvs
         else:
             raise TypeError
@@ -86,6 +86,7 @@ class PrimerPairTDynamics:
 
         self._genome = genome
         self._product = None
+        self._rvs_product = None
         self._annealing_Tm = None
         self._annealing_Tm_gap = None
         self._fwd_clamp = None
@@ -101,6 +102,7 @@ class PrimerPairTDynamics:
         self._genome = genome
 
         self._product = None
+        self._rvs_product = None
         self._annealing_Tm = None
         self._annealing_Tm_gap = None
         self._fwd_clamp = None
@@ -109,6 +111,10 @@ class PrimerPairTDynamics:
     @property
     def product(self):
         return self.get_product()
+
+    @property
+    def rvs_product(self):
+        return self.get_rvs_product()
 
     @property
     def annealing_Tm(self):
@@ -143,9 +149,9 @@ class PrimerPairTDynamics:
         matches = re.findall(product_format, self._genome)
 
         if len(matches) == 0:
-            raise AttributeError("PCR product cannot be found in genome.")
+            raise ValueError("PCR product cannot be found in genome.")
         if len(matches) > 1:
-            raise AttributeError("Given primers have multiple products.")
+            raise ValueError("Given primers have multiple products.")
 
         product = matches[0]
         self._product = product
@@ -155,6 +161,17 @@ class PrimerPairTDynamics:
             self.set_product()
 
         return self._product
+
+    def set_rvs_product(self):
+        product = self.get_product()
+
+        self._rvs_product = str(Seq(product).reverse_complement)
+
+    def get_rvs_product(self):
+        if self._rvs_product is None:
+            self.set_rvs_product()
+
+        return self._rvs_product
 
     def set_annealing_Tm(self):
         product = self.get_product()

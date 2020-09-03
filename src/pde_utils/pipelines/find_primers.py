@@ -136,10 +136,11 @@ def parse_find_primers(unparsed_args):
 def execute_find_primers(alchemist, folder_path=None,
                          folder_name=DEFAULT_FOLDER_NAME, values=None,
                          filters="", groups=[], verbose=False,
-                         threads=4, prc=0.8, max_std=3000, len_oligomer=20,
+                         threads=4, prc=0.7, max_std=3000, len_oligomer=20,
                          minD=900, maxD=1100, tmMin=52, tmMax=58,
                          hpn_dG_min=-2000, homo_dG_min=-5000, GC_max=60,
-                         hetero_dG_min=-5000, exclude=True):
+                         hetero_dG_min=-5000, tm_gap=5, Ta_gap=5,
+                         exclude=True):
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
     working_path = pipelines_basic.create_working_path(
@@ -176,7 +177,7 @@ def execute_find_primers(alchemist, folder_path=None,
                                             verbose=verbose)
 
         if verbose:
-            print(f"Identifying primer pairs for '{mapped_path}'...")
+            print(f"...Identifying primer pairs for '{mapped_path}'...")
         primer_pairs = find_primer_pairs(
                                     alchemist, pham_gene_map, genome_map,
                                     verbose=verbose, threads=threads, prc=prc,
@@ -185,19 +186,32 @@ def execute_find_primers(alchemist, folder_path=None,
                                     tmMax=tmMax, hpn_dG_min=hpn_dG_min,
                                     homo_dG_min=homo_dG_min, GC_max=GC_max)
 
-        primer_pairs = test_primer_pairs(primer_pairs, genome_map,
-                                         verbose=verbose,
-                                         hetero_dG_min=hetero_dG_min)
+        if not primer_pairs:
+            print(f"No primer pairs found for '{mapped_path}' with "
+                  "current parameters...")
+            continue
 
         if verbose:
-            print(f"Selecting primer_pair from {len(primer_pairs)} "
-                  f"primer pairs for '{mapped_path}'...")
+            print(f"...Identified {len(primer_pairs)} valid primer pairs.")
+
+        if verbose:
+            print(f"...Testing primer pairs for '{mapped_path}'...")
+        primer_pairs = test_primer_pairs(primer_pairs, genome_map,
+                                         verbose=verbose,
+                                         hetero_dG_min=hetero_dG_min,
+                                         Ta_gap_max=Ta_gap, tm_gap_max=tm_gap)
 
         if primer_pairs:
+            if verbose:
+                print(f"...{len(primer_pairs)} passed primer testing.")
+
             results_map[mapped_path] = (primer_pairs, genome_map)
 
-    if exclude:
-        results_map = select_primer_pairs(results_map)
+    if not results_map:
+        print("No primer pairs found in total with current parameters...")
+    else:
+        if exclude:
+            results_map = select_primer_pairs(results_map, verbose=verbose)
 
     for mapped_path, primer_pairs in results_map.items():
         pipelines_basic.create_working_dir(mapped_path)
@@ -223,8 +237,8 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
             break
 
         if verbose:
-            print(f"...Analyzing pham {pham}...")
-            print(f"......Pham is represented in {round(pham_per, 3)*100}%"
+            print(f"......Analyzing pham {pham}...")
+            print(f".........Pham is represented in {round(pham_per, 3)*100}%"
                   " of currently viewed genomes...")
 
         cds_list = export_db.parse_feature_data(alchemist,
@@ -265,7 +279,7 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
             continue
 
         if verbose:
-            print(f"......Pham {pham} has {num_conserved_kmers} "
+            print(f".........Pham {pham} has {num_conserved_kmers} "
                   "conserved kmers...")
 
         F_oligomers = get_stable_oligomers(
@@ -287,9 +301,9 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
             continue
 
         if verbose:
-            print(f"......Pham {pham} has {len(F_oligomers)} "
+            print(f".........Pham {pham} has {len(F_oligomers)} "
                   "stable forward putative primer oligomers.")
-            print(f"......Pham {pham} has {len(R_oligomers)} "
+            print(f".........Pham {pham} has {len(R_oligomers)} "
                   "stable reverse putative primer oligomers.")
 
         pham_F_pos_oligomer_map = map_pos_to_oligomer(F_oligomers,
@@ -302,7 +316,7 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
         R_pos_oligomer_map.update(pham_R_pos_oligomer_map)
 
     if verbose:
-        print("Matching oligomers to create primer pairs...")
+        print("...Matching oligomers to create primer pairs...")
     primer_pairs = link_primer_oligomers(
                                         F_pos_oligomer_map, R_pos_oligomer_map,
                                         minD=minD, maxD=maxD)
@@ -310,40 +324,55 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
 
 
 def test_primer_pairs(primer_pairs, genome_map, verbose=False,
-                      hetero_dG_min=-5000, Tm_gap_max=5, anneal_gap_max=5,
+                      hetero_dG_min=-5000, tm_gap_max=5, Ta_gap_max=5,
                       minD=900, maxD=1100):
     tested_primer_pairs = []
 
+    failed_one_product = 0
+    failed_length = 0
+    failed_thermodynamics = 0
     num_pairs = len(primer_pairs)
     for i in range(num_pairs):
         primer_pair = primer_pairs[i]
-
-        if verbose:
-            print(f"...Testing primer pair {i} out of "
-                  f"{num_pairs} putative primers...")
 
         valid_primers = True
         for genome_id, genome in genome_map.items():
             primer_pair.genome = str(genome.seq)
 
             try:
-                valid_primers = (
-                        (primer_pair.Tm_gap < Tm_gap_max) and
-                        (len(primer_pair.product) > minD) and
-                        (len(primer_pair.product) < maxD) and
-                        (primer_pair.heterodimer.dg >= hetero_dG_min) and
-                        (primer_pair.annealing_Tm_gap < anneal_gap_max))
-            except AttributeError:
+                primer_pair.set_product()
+
+            except ValueError:
                 valid_primers = False
+                failed_one_product += 1
+                break
+
+            product_len = len(primer_pair.product)
+            if product_len < minD or product_len > maxD:
+                valid_primers = False
+                failed_length += 1
+                break
+
+            valid_primers = ((primer_pair.Tm_gap < tm_gap_max) and
+                             (primer_pair.heterodimer.dg >= hetero_dG_min) and
+                             (primer_pair.annealing_Tm_gap < Ta_gap_max))
 
             if not valid_primers:
+                failed_thermodynamics += 1
                 break
 
         if valid_primers:
             tested_primer_pairs.append(primer_pair)
+    if verbose:
+        print(f"......{failed_one_product} primer "
+              "pairs had an incorrect number of products")
+        print(f"......{failed_length} primer pairs "
+              "had product lengths outside of the predicted bounds")
+        print(f"......{failed_thermodynamics} primer pairs "
+              "failed thermodynamic checks")
 
     if verbose:
-        print("...Rating tested primer pairs...")
+        print("......Rating tested primer pairs...")
     tested_primer_pairs = sorted(tested_primer_pairs,
                                  key=lambda pair: pair.rating,
                                  reverse=True)
@@ -351,13 +380,16 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
     return tested_primer_pairs
 
 
-def select_primer_pairs(results_map):
+def select_primer_pairs(results_map, verbose=False):
     selected_results_map = {}
 
     for mapped_path, data in results_map.items():
+        if verbose:
+            print(f"Selecting primers for '{mapped_path}'...")
 
-        valid_primer_pair = None
-        for primer_pair in data[0]:
+        valid_primer_num = None
+        for i in range(len(data[0])):
+            primer_pair = data[0][i]
 
             valid_pair = True
             for inner_mapped_path, inner_data in results_map.items():
@@ -369,18 +401,18 @@ def select_primer_pairs(results_map):
                         primer_pair.genome = str(genome.seq)
                         primer_pair.product
                         valid_pair = False
-                    except AttributeError:
+                    except ValueError:
                         pass
 
                 if not valid_pair:
                     break
 
             if valid_pair:
-                valid_primer_pair = primer_pair
+                valid_primer_num = i
                 break
 
-        if valid_primer_pair is not None:
-            selected_results_map[mapped_path] = ([valid_primer_pair],)
+        if valid_primer_num is not None:
+            selected_results_map[mapped_path] = (data[0][valid_primer_num:],)
         else:
             print(f"All primer pairs for '{mapped_path}' generate products "
                   "against non-grouped genomes")
@@ -462,7 +494,7 @@ def link_primer_oligomers(forward_position_map, reverse_position_map,
             if R_oligomers:
                 for F_oligomer in F_oligomers:
                     for R_oligomer in R_oligomers:
-                        primer_pair = primer_TD.PrimerPairTDynamics(
+                        primer_pair = primer_TD.PrimerPair(
                                                 F_oligomer, R_oligomer)
                         primer_pairs.append(primer_pair)
 
