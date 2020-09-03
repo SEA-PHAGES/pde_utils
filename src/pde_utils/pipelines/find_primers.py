@@ -6,7 +6,6 @@
 import argparse
 import sys
 import time
-from collections import OrderedDict
 from pathlib import Path
 
 from Bio.Seq import Seq
@@ -103,6 +102,7 @@ def parse_find_primers(unparsed_args):
                         type=Path, help=FOLDER_PATH_HELP)
     parser.add_argument("-v", "--verbose", action="store_true",
                         help=VERBOSE_HELP)
+    parser.add_argument("-th", "--threads")
 
     parser.add_argument("-if", "--import_file", dest="input",
                         type=pipelines_basic.convert_file_path,
@@ -113,6 +113,17 @@ def parse_find_primers(unparsed_args):
                         help=WHERE_HELP)
     parser.add_argument("-g", "--group_by", nargs="*", dest="groups",
                         help=GROUP_BY_HELP)
+
+    parser.add_argument("-prc")
+    parser.add_argument("-minD")
+    parser.add_argument("-maxD")
+    parser.add_argument("-hpn_min")
+    parser.add_argument("-ho_min")
+    parser.add_argument("-het_min")
+    parser.add_argument("-GC")
+    parser.add_argument("-max_std")
+    parser.add_argument("-len")
+    parser.add_argument("-ex")
 
     parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME, folder_path=None,
                         config_file=None, verbose=False, input=[],
@@ -127,8 +138,8 @@ def execute_find_primers(alchemist, folder_path=None,
                          filters="", groups=[], verbose=False,
                          threads=4, prc=0.8, max_std=3000, len_oligomer=20,
                          minD=900, maxD=1100, tmMin=52, tmMax=58,
-                         hpn_dG_min=-500, homo_dG_min=-1000, GC_max=60,
-                         hetero_dG_min=-1000):
+                         hpn_dG_min=-2000, homo_dG_min=-5000, GC_max=60,
+                         hetero_dG_min=-5000, exclude=True):
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
     working_path = pipelines_basic.create_working_path(
@@ -138,6 +149,8 @@ def execute_find_primers(alchemist, folder_path=None,
                                                     db_filter, working_path,
                                                     groups=groups,
                                                     verbose=verbose)
+    results_map = {}
+
     if verbose:
         print("Prepared query and path structure, beginning primer search...")
 
@@ -163,7 +176,7 @@ def execute_find_primers(alchemist, folder_path=None,
                                             verbose=verbose)
 
         if verbose:
-            print("Identifying primer pairs for '{mapped_path}'...")
+            print(f"Identifying primer pairs for '{mapped_path}'...")
         primer_pairs = find_primer_pairs(
                                     alchemist, pham_gene_map, genome_map,
                                     verbose=verbose, threads=threads, prc=prc,
@@ -172,31 +185,37 @@ def execute_find_primers(alchemist, folder_path=None,
                                     tmMax=tmMax, hpn_dG_min=hpn_dG_min,
                                     homo_dG_min=homo_dG_min, GC_max=GC_max)
 
-        primer_pair_TDs = test_primer_pairs(primer_pairs, genome_map,
-                                            verbose=verbose,
-                                            hetero_dG_min=hetero_dG_min)
+        primer_pairs = test_primer_pairs(primer_pairs, genome_map,
+                                         verbose=verbose,
+                                         hetero_dG_min=hetero_dG_min)
 
         if verbose:
-            print(f"Selecting primer_pair from {len(primer_pair_TDs)} "
+            print(f"Selecting primer_pair from {len(primer_pairs)} "
                   f"primer pairs for '{mapped_path}'...")
 
-        opt_primer_pair = select_primer_pair(primer_pair_TDs)
-        print(opt_primer_pair)
-        sys.exit(1)
-        pipelines_basic.create_working_dir(working_path)
+        if primer_pairs:
+            results_map[mapped_path] = (primer_pairs, genome_map)
+
+    if exclude:
+        results_map = select_primer_pairs(results_map)
+
+    for mapped_path, primer_pairs in results_map.items():
+        pipelines_basic.create_working_dir(mapped_path)
+        file_path = mapped_path.joinpath("primer.txt")
+        primers.write_primer_txt_file(primer_pairs[0][0], file_path)
 
 
 def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
                       threads=4, prc=0.8, max_std=3000, len_oligomer=20,
                       minD=900, maxD=1100, tmMin=52, tmMax=58,
-                      hpn_dG_min=-500, homo_dG_min=-1000, GC_max=60):
+                      hpn_dG_min=-2000, homo_dG_min=-5000, GC_max=60):
     pham_histogram = {}
     for pham, genes in pham_gene_map.items():
         pham_histogram[pham] = len(genes)
     pham_histogram = basic.sort_histogram(pham_histogram)
 
-    F_oligomer_pos_map = OrderedDict()
-    R_oligomer_pos_map = OrderedDict()
+    F_pos_oligomer_map = {}
+    R_pos_oligomer_map = {}
     for pham, count in pham_histogram.items():
         pham_per = count/len(genome_map)
 
@@ -217,8 +236,8 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
             starts.append(cds.start)
             avg_start += cds.start
         avg_start = int(round(avg_start/len(cds_list), 0))
-        start_std = std(starts)
 
+        start_std = std(starts)
         if start_std > max_std:
             if verbose:
                 print(f"......Pham {pham} has unstable synteny...")
@@ -229,7 +248,6 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
             if cds.orientation == "F":
                 avg_orientation += 1
         avg_orientation = avg_orientation/len(cds_list)
-
         if avg_orientation != 0 and avg_orientation != 1:
             if verbose:
                 print(f"......Pham {pham} has unstable direction...")
@@ -250,19 +268,17 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
             print(f"......Pham {pham} has {num_conserved_kmers} "
                   "conserved kmers...")
 
-        F_oligomers_cds_map = get_oriented_oligomers(
-                                        conserved_kmer_data, "F")
-        R_oligomers_cds_map = get_oriented_oligomers(
-                                        conserved_kmer_data, "R")
+        F_oligomers = get_stable_oligomers(
+                                        conserved_kmer_data, avg_start, "F",
+                                        tmMin=tmMin, tmMax=tmMax,
+                                        hpn_dG_min=hpn_dG_min,
+                                        homo_dG_min=homo_dG_min, GC_max=GC_max)
+        R_oligomers = get_stable_oligomers(
+                                        conserved_kmer_data, avg_start, "R",
+                                        tmMin=tmMin, tmMax=tmMax,
+                                        hpn_dG_min=hpn_dG_min,
+                                        homo_dG_min=homo_dG_min, GC_max=GC_max)
 
-        F_oligomers = primers.filter_oligomers(
-                                    F_oligomers_cds_map.keys(), tmMin=tmMin,
-                                    tmMax=tmMax, hpn_dG_min=hpn_dG_min,
-                                    homo_dG_min=homo_dG_min, GC_max=GC_max)
-        R_oligomers = primers.filter_oligomers(
-                                    R_oligomers_cds_map.keys(), tmMin=tmMin,
-                                    tmMax=tmMax, hpn_dG_min=hpn_dG_min,
-                                    homo_dG_min=homo_dG_min, GC_max=GC_max)
         num_stable_oligomers = len(F_oligomers) + len(R_oligomers)
 
         if num_stable_oligomers == 0:
@@ -276,74 +292,101 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
             print(f"......Pham {pham} has {len(R_oligomers)} "
                   "stable reverse putative primer oligomers.")
 
-        pham_F_oligomer_pos_map = map_oligomer_to_pos(F_oligomers_cds_map,
-                                                      F_oligomers,
-                                                      avg_start,
+        pham_F_pos_oligomer_map = map_pos_to_oligomer(F_oligomers,
                                                       verbose=verbose)
 
-        pham_R_oligomer_pos_map = map_oligomer_to_pos(R_oligomers_cds_map,
-                                                      R_oligomers,
-                                                      avg_start,
+        pham_R_pos_oligomer_map = map_pos_to_oligomer(R_oligomers,
                                                       verbose=verbose)
 
-        F_oligomer_pos_map.update(pham_F_oligomer_pos_map)
-        R_oligomer_pos_map.update(pham_R_oligomer_pos_map)
+        F_pos_oligomer_map.update(pham_F_pos_oligomer_map)
+        R_pos_oligomer_map.update(pham_R_pos_oligomer_map)
 
-    primer_pairs = []
-
-    F_pos_oligomer_map = invert_dictionary(F_oligomer_pos_map)
-    R_pos_oligomer_map = invert_dictionary(R_oligomer_pos_map)
-
-    for pos, F_oligomers in F_pos_oligomer_map.items():
-        for i in range(minD, maxD+1):
-            R_oligomers = R_pos_oligomer_map.get(pos+i)
-            if R_oligomers:
-                for F_oligomer in F_oligomers:
-                    for R_oligomer in R_oligomers:
-                        pair_dict = {}
-                        pair_dict["forward"] = F_oligomer
-                        pair_dict["reverse"] = R_oligomer
-                        pair_dict["length"] = i
-                        pair_dict["start"] = pos
-                        primer_pairs.append(pair_dict)
-
-    primer_pairs = sorted(primer_pairs, key=lambda pair: pair['start'])
+    if verbose:
+        print("Matching oligomers to create primer pairs...")
+    primer_pairs = link_primer_oligomers(
+                                        F_pos_oligomer_map, R_pos_oligomer_map,
+                                        minD=minD, maxD=maxD)
     return primer_pairs
 
 
 def test_primer_pairs(primer_pairs, genome_map, verbose=False,
-                      hetero_dG_min=-1000, Tm_gap_max=5, anneal_gap_max=5):
-    tested_primer_pair_TDs = []
+                      hetero_dG_min=-5000, Tm_gap_max=5, anneal_gap_max=5,
+                      minD=900, maxD=1100):
+    tested_primer_pairs = []
 
     num_pairs = len(primer_pairs)
     for i in range(num_pairs):
         primer_pair = primer_pairs[i]
 
-        for genome_id, genome in genome_map.items():
-            primer_pair_TD = primer_TD.PrimerPairTDynamics(
-                                                    primer_pair["forward"],
-                                                    primer_pair["reverse"],
-                                                    genome=str(genome.seq))
         if verbose:
             print(f"...Testing primer pair {i} out of "
                   f"{num_pairs} putative primers...")
 
-        if primer_pair_TD.Tm_gap > Tm_gap_max:
-            continue
+        valid_primers = True
+        for genome_id, genome in genome_map.items():
+            primer_pair.genome = str(genome.seq)
 
-        if primer_pair_TD.heterodimer.dg < hetero_dG_min:
-            continue
+            try:
+                valid_primers = (
+                        (primer_pair.Tm_gap < Tm_gap_max) and
+                        (len(primer_pair.product) > minD) and
+                        (len(primer_pair.product) < maxD) and
+                        (primer_pair.heterodimer.dg >= hetero_dG_min) and
+                        (primer_pair.annealing_Tm_gap < anneal_gap_max))
+            except AttributeError:
+                valid_primers = False
 
-        if primer_pair_TD.annealing_Tm_gap > anneal_gap_max:
-            continue
+            if not valid_primers:
+                break
 
-        tested_primer_pair_TDs.append(primer_pair_TD)
+        if valid_primers:
+            tested_primer_pairs.append(primer_pair)
 
-    return tested_primer_pair_TDs
+    if verbose:
+        print("...Rating tested primer pairs...")
+    tested_primer_pairs = sorted(tested_primer_pairs,
+                                 key=lambda pair: pair.rating,
+                                 reverse=True)
+
+    return tested_primer_pairs
 
 
-def select_primer_pair(primer_pair_TDs):
-    return primer_pair_TDs[0]
+def select_primer_pairs(results_map):
+    selected_results_map = {}
+
+    for mapped_path, data in results_map.items():
+
+        valid_primer_pair = None
+        for primer_pair in data[0]:
+
+            valid_pair = True
+            for inner_mapped_path, inner_data in results_map.items():
+                if mapped_path == mapped_path:
+                    continue
+
+                for genome_id, genome in inner_data[1]:
+                    try:
+                        primer_pair.genome = str(genome.seq)
+                        primer_pair.product
+                        valid_pair = False
+                    except AttributeError:
+                        pass
+
+                if not valid_pair:
+                    break
+
+            if valid_pair:
+                valid_primer_pair = primer_pair
+                break
+
+        if valid_primer_pair is not None:
+            selected_results_map[mapped_path] = ([valid_primer_pair],)
+        else:
+            print(f"All primer pairs for '{mapped_path}' generate products "
+                  "against non-grouped genomes")
+            sys.exit(1)
+
+    return selected_results_map
 
 
 # TO FIX IN BASIC
@@ -372,36 +415,59 @@ def invert_dictionary(dictionary):
     return new_dict
 
 
-def get_oriented_oligomers(conserved_kmer_data, orientation):
-    oligomers_cds_map = {}
+def get_stable_oligomers(conserved_kmer_data, avg_start, orientation,
+                         tmMin=52, tmMax=58, hpn_dG_min=-2000,
+                         homo_dG_min=-5000, GC_max=60):
+    oligomers = []
 
     for kmer, kmer_data in conserved_kmer_data.items():
         if kmer_data[0][0].orientation != orientation:
             kmer = str(Seq(kmer).reverse_complement())
 
-        oligomers_cds_map[kmer] = kmer_data
+        oligomer = primers.get_stable_oligomer(
+                                       kmer, tmMin=tmMin, tmMax=tmMax,
+                                       GC_max=GC_max, hpn_dG_min=hpn_dG_min,
+                                       homo_dG_min=homo_dG_min)
+        if oligomer is None:
+            continue
 
-    return oligomers_cds_map
+        avg_kmer_start = 0
+        for data in kmer_data:
+            avg_kmer_start += data[1]
+        avg_kmer_start = int(round(avg_kmer_start/len(kmer_data), 0))
+        oligomer.start = avg_kmer_start
+
+        oligomers.append(oligomer)
+
+    return oligomers
 
 
-def map_oligomer_to_pos(oligomers_cds_map, oligomers, avg_start,
-                        verbose=False):
-    oligomer_pos_map = OrderedDict()
+def map_pos_to_oligomer(oligomers, verbose=False):
+    pos_oligomer_map = {}
     for oligomer in oligomers:
-        data = oligomers_cds_map[oligomer]
-        avg_oligomer_start = 0
-        for kmer_data in data:
-            avg_oligomer_start += kmer_data[1]
-        avg_oligomer_start = int(round(avg_oligomer_start/len(data),
-                                       0))
+        mapped_oligomers = pos_oligomer_map.get(oligomer.start, [])
+        mapped_oligomers.append(oligomer)
+        pos_oligomer_map[oligomer.start] = mapped_oligomers
 
-        avg_oligomer_start = avg_start + avg_oligomer_start
+    return pos_oligomer_map
 
-        oligomer_pos_map[oligomer] = avg_oligomer_start
 
-    oligomer_pos_map = basic.sort_histogram(oligomer_pos_map)
+def link_primer_oligomers(forward_position_map, reverse_position_map,
+                          minD=900, maxD=1100):
+    primer_pairs = []
 
-    return oligomer_pos_map
+    for pos, F_oligomers in forward_position_map.items():
+        for i in range(minD, maxD+1):
+            R_oligomers = reverse_position_map.get(pos+i)
+            if R_oligomers:
+                for F_oligomer in F_oligomers:
+                    for R_oligomer in R_oligomers:
+                        primer_pair = primer_TD.PrimerPairTDynamics(
+                                                F_oligomer, R_oligomer)
+                        primer_pairs.append(primer_pair)
+
+    primer_pairs = sorted(primer_pairs, key=lambda pair: pair.start)
+    return primer_pairs
 
 
 # TO RELOCATE

@@ -4,12 +4,13 @@ from Bio import SeqUtils
 from Bio.Seq import Seq
 from primer3 import (
         calcTm, calcHairpin, calcHomodimer, calcHeterodimer)
+from primer3.bindings import calcEndStability
 
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
 class OligomerTDynamics:
-    def __init__(self, oligomer, max_runs=4):
+    def __init__(self, oligomer, start=None, max_runs=4):
         base_runs_format = re.compile("".join(["A{", str(max_runs), "}|"]) +
                                       "".join(["T{", str(max_runs), "}|"]) +
                                       "".join(["G{", str(max_runs), "}|"]) +
@@ -24,11 +25,58 @@ class OligomerTDynamics:
 
         self.base_run = (re.match(base_runs_format, oligomer) is not None)
 
+        self.start = start
+
+        self._rating = None
+
+    @property
+    def rating(self):
+        return self.get_rating()
+
+    def set_rating(self):
+        self._rating = self.calc_rating(self)
+
+    def get_rating(self):
+        if self._rating is None:
+            self.set_rating()
+
+        return self._rating
+
+    @classmethod
+    def calc_rating(self, oligomer):
+        rating = 0
+
+        rating += -100 * (10**(oligomer.hairpin.dg/-1400) / 10**(-2000/-1400))
+        rating += -100 * (10**(oligomer.homodimer.dg/-1400) /
+                          10**(-5000/-1400))
+
+        return rating
+
 
 class PrimerPairTDynamics:
-    def __init__(self, fwd, rvs, start=None, genome=None):
-        self.fwd = OligomerTDynamics(fwd)
-        self.rvs = OligomerTDynamics(rvs)
+    def __init__(self, fwd, rvs, start=None, end=None, genome=None):
+        if isinstance(fwd, str):
+            self.fwd = OligomerTDynamics(fwd)
+        elif isinstance(fwd, OligomerTDynamics):
+            self.fwd = fwd
+        else:
+            raise TypeError
+
+        if isinstance(rvs, str):
+            self.rvs = OligomerTDynamics(rvs)
+        elif isinstance(fwd, OligomerTDynamics):
+            self.rvs = rvs
+        else:
+            raise TypeError
+
+        self.start = start
+        self.end = end
+
+        if self.start is None:
+            self.start = self.fwd.start
+        if self.end is None and self.start is not None:
+            self.end = (self.rvs.start - self.start) + 1
+
         self.Tm_gap = abs(self.fwd.Tm - self.rvs.Tm)
 
         self.unst_primer = self.fwd
@@ -36,16 +84,27 @@ class PrimerPairTDynamics:
             self.unst_primer = self.rvs
         self.heterodimer = calcHeterodimer(self.fwd.seq, self.rvs.seq)
 
-        self.start = start
-
         self._genome = genome
         self._product = None
         self._annealing_Tm = None
         self._annealing_Tm_gap = None
+        self._fwd_clamp = None
+        self._rvs_clamp = None
+        self._rating = None
 
     @property
     def genome(self):
         return self._genome
+
+    @genome.setter
+    def genome(self, genome):
+        self._genome = genome
+
+        self._product = None
+        self._annealing_Tm = None
+        self._annealing_Tm_gap = None
+        self._fwd_clamp = None
+        self._rvs_clamp = None
 
     @property
     def product(self):
@@ -58,6 +117,18 @@ class PrimerPairTDynamics:
     @property
     def annealing_Tm_gap(self):
         return self.get_annealing_Tm_gap()
+
+    @property
+    def fwd_clamp(self):
+        return self.get_fwd_clamp()
+
+    @property
+    def rvs_clamp(self):
+        return self.get_rvs_clamp()
+
+    @property
+    def rating(self):
+        return self.get_rating()
 
     def set_product(self):
         if self._genome is None:
@@ -72,9 +143,9 @@ class PrimerPairTDynamics:
         matches = re.findall(product_format, self._genome)
 
         if len(matches) == 0:
-            raise Exception("PCR product cannot be found in genome.")
+            raise AttributeError("PCR product cannot be found in genome.")
         if len(matches) > 1:
-            raise Exception("Given primers have multiple products.")
+            raise AttributeError("Given primers have multiple products.")
 
         product = matches[0]
         self._product = product
@@ -114,3 +185,52 @@ class PrimerPairTDynamics:
             self.set_annealing_Tm_gap()
 
         return self._annealing_Tm_gap
+
+    def set_fwd_clamp(self):
+        product = self.get_product()
+
+        fwd_clamp = calcEndStability(self.fwd.seq, product)
+        self._fwd_clamp = fwd_clamp
+
+    def get_fwd_clamp(self):
+        if self._fwd_clamp is None:
+            self.set_fwd_clamp()
+
+        return self._fwd_clamp
+
+    def set_rvs_clamp(self):
+        product = self.get_product()
+        rvs_compl_product = str(Seq(product).reverse_complement())
+
+        rvs_clamp = calcEndStability(self.rvs.seq, rvs_compl_product)
+        self._rvs_clamp = rvs_clamp
+
+    def get_rvs_clamp(self):
+        if self._rvs_clamp is None:
+            self.set_rvs_clamp()
+
+        return self._fwd_clamp
+
+    def set_rating(self):
+        self._rating = self.calc_rating(self)
+
+    def get_rating(self):
+        if self._rating is None:
+            self.set_rating()
+
+        return self._rating
+
+    @classmethod
+    def calc_rating(self, primer_pair):
+        rating = 0
+
+        rating += primer_pair.fwd.rating
+        rating += primer_pair.rvs.rating
+        rating += -100 * (10**(primer_pair.heterodimer.dg/-1400) /
+                          10**(-5000/-1400))
+        rating += -10 * (1 / ((10**(primer_pair.fwd_clamp.dg / -1400)) /
+                              (10**(-3000 / -1400))))
+        rating += -10 * (1 / ((10**(primer_pair.rvs_clamp.dg / -1400)) /
+                              (10**(-3000 / -1400))))
+
+        return rating
