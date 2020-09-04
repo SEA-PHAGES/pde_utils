@@ -4,7 +4,9 @@
    """
 
 import argparse
+import queue
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -228,8 +230,22 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
         pham_histogram[pham] = len(genes)
     pham_histogram = basic.sort_histogram(pham_histogram)
 
+    work_queue = queue.Queue()
+    work_lock = threading.Lock()
+
     F_pos_oligomer_map = {}
+    F_map_lock = threading.Lock()
     R_pos_oligomer_map = {}
+    R_map_lock = threading.Lock()
+
+    threads = []
+    for i in range(threads):
+        thread = FindThread(i, work_queue, work_lock,
+                            F_pos_oligomer_map, F_map_lock,
+                            R_pos_oligomer_map, R_map_lock)
+        thread.start()
+        threads.append(thread)
+
     for pham, count in pham_histogram.items():
         pham_per = count/len(genome_map)
 
@@ -237,7 +253,6 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
             break
 
         if verbose:
-            print(f"......Analyzing pham {pham}...")
             print(f".........Pham is represented in {round(pham_per, 3)*100}%"
                   " of currently viewed genomes...")
 
