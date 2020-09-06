@@ -7,6 +7,7 @@ import argparse
 import multiprocessing
 import sys
 import time
+import math
 from pathlib import Path
 
 from Bio.Seq import Seq
@@ -199,7 +200,7 @@ def execute_find_primers(alchemist, folder_path=None,
         if verbose:
             print(f"...Testing primer pairs for '{mapped_path}'...")
         primer_pairs = test_primer_pairs(primer_pairs, genome_map,
-                                         verbose=verbose,
+                                         threads=threads, verbose=verbose,
                                          hetero_dG_min=hetero_dG_min,
                                          Ta_gap_max=Ta_gap, tm_gap_max=tm_gap)
 
@@ -278,51 +279,40 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
 
 
 def test_primer_pairs(primer_pairs, genome_map, verbose=False,
-                      hetero_dG_min=-5000, tm_gap_max=5, Ta_gap_max=5,
-                      minD=900, maxD=1100):
-    tested_primer_pairs = []
+                      threads=4, hetero_dG_min=-5000, tm_gap_max=5,
+                      Ta_gap_max=5, minD=900, maxD=1100):
+    thread_manager = multiprocessing.Manager()
+    thread_pool = multiprocessing.Pool(processes=4)
 
-    failed_one_product = 0
-    failed_length = 0
-    failed_thermodynamics = 0
-    num_pairs = len(primer_pairs)
-    for i in range(num_pairs):
-        primer_pair = primer_pairs[i]
+    tested_primer_pairs = thread_manager.list()
 
-        valid_primers = True
-        for genome_id, genome in genome_map.items():
-            primer_pair.genome = str(genome.seq)
+    failed_product = thread_manager.Value("I", 0)
+    failed_length = thread_manager.Value("I", 0)
+    failed_thermo = thread_manager.Value("I", 0)
 
-            try:
-                primer_pair.set_product()
+    managed_genome_map = thread_manager.dict()
+    managed_genome_map.update(genome_map)
 
-            except ValueError:
-                valid_primers = False
-                failed_one_product += 1
-                break
+    chunk_size = math.ceil(len(primer_pairs)/threads)
+    work_chunks = basic.partition_list(primer_pairs, chunk_size)
 
-            product_len = len(primer_pair.product)
-            if product_len < minD or product_len > maxD:
-                valid_primers = False
-                failed_length += 1
-                break
+    for work_chunk in work_chunks:
+        thread_pool.apply_async(process_test_primer_pairs,
+                                (work_chunk, test_primer_pairs, failed_product,
+                                 failed_length, failed_thermo,
+                                 managed_genome_map, minD, maxD, tm_gap_max,
+                                 hetero_dG_min, Ta_gap_max))
 
-            valid_primers = ((primer_pair.Tm_gap < tm_gap_max) and
-                             (primer_pair.heterodimer.dg >= hetero_dG_min) and
-                             (primer_pair.annealing_Tm_gap < Ta_gap_max))
+    thread_pool.close()
+    thread_pool.join()
+    thread_pool.terminate()
 
-            if not valid_primers:
-                failed_thermodynamics += 1
-                break
-
-        if valid_primers:
-            tested_primer_pairs.append(primer_pair)
     if verbose:
-        print(f"......{failed_one_product} primer "
+        print(f"......{failed_product.value} primer "
               "pairs had an incorrect number of products")
-        print(f"......{failed_length} primer pairs "
+        print(f"......{failed_length.value} primer pairs "
               "had product lengths outside of the predicted bounds")
-        print(f"......{failed_thermodynamics} primer pairs "
+        print(f"......{failed_thermo.value} primer pairs "
               "failed thermodynamic checks")
 
     if verbose:
@@ -474,15 +464,59 @@ def process_find_primer_pairs(work_queue, F_results, R_results,
 
         pham_F_pos_oligomer_map = map_pos_to_oligomer(F_oligomers,
                                                       verbose=verbose)
-
         pham_R_pos_oligomer_map = map_pos_to_oligomer(R_oligomers,
                                                       verbose=verbose)
 
-        for pos, obj in pham_F_pos_oligomer_map.items():
-            F_results[pos] = obj
+        F_results.update(pham_F_pos_oligomer_map)
+        R_results.update(pham_R_pos_oligomer_map)
 
-        for pos, obj in pham_R_pos_oligomer_map.items():
-            R_results[pos] = obj
+
+def process_test_primer_pairs(primer_pairs, tested_primer_pairs,
+                              failed_product, failed_length,
+                              failed_thermo, genome_map, minD, maxD,
+                              tm_gap_max, hetero_dG_min, Ta_gap_max):
+    failed_product_count = 0
+    failed_length_count = 0
+    failed_thermo_count = 0
+
+    tested_primer_pairs_storage = []
+
+    for primer_pair in primer_pairs:
+
+        valid_primers = True
+        for genome_id, genome in genome_map.items():
+            primer_pair.genome = str(genome.seq)
+
+            try:
+                primer_pair.set_product()
+
+            except ValueError:
+                valid_primers = False
+                failed_product_count += 1
+                break
+
+            product_len = len(primer_pair.product)
+            if product_len < minD or product_len > maxD:
+                valid_primers = False
+                failed_length_count += 1
+                break
+
+            valid_primers = ((primer_pair.Tm_gap < tm_gap_max) and
+                             (primer_pair.heterodimer.dg >= hetero_dG_min) and
+                             (primer_pair.annealing_Tm_gap < Ta_gap_max))
+
+            if not valid_primers:
+                failed_thermo_count += 1
+                break
+
+        if valid_primers:
+            tested_primer_pairs_storage.append(primer_pair)
+
+    failed_product.value += failed_product_count
+    failed_length.value += failed_length_count
+    failed_thermo_count += failed_thermo_count
+
+    tested_primer_pairs = tested_primer_pairs + tested_primer_pairs_storage
 
 
 def get_stable_oligomers(conserved_kmer_data, avg_start, orientation,
