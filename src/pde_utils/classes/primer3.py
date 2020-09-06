@@ -9,6 +9,63 @@ from primer3.bindings import calcEndStability
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
+class Clamp:
+    def __init__(self, oligomer, target):
+        self.oligomer = oligomer
+        self.target = target
+
+        thermo = calcEndStability(self.oligomer, self.target)
+
+        self.tm = thermo.tm
+        self.dg = thermo.dg
+        self.dh = thermo.dh
+        self.ds = thermo.ds
+
+
+class Heterodimer:
+    def __init__(self, oligomer, target):
+        self.oligomer = oligomer
+        self.target = target
+
+        thermo = calcHeterodimer(self.oligomer, self.target,
+                                 output_structure=True)
+
+        self.tm = thermo.tm
+        self.dg = thermo.dg
+        self.dh = thermo.dh
+        self.ds = thermo.ds
+
+        self.structure = thermo.ascii_structure_lines
+
+
+class Homodimer:
+    def __init__(self, oligomer):
+        self.oligomer = oligomer
+
+        thermo = calcHomodimer(self.oligomer, output_structure=True)
+
+        self.tm = thermo.tm
+        self.dg = thermo.dg
+        self.dh = thermo.dh
+        self.ds = thermo.ds
+
+        self.structure = thermo.ascii_structure_lines
+
+
+class Hairpin:
+    def __init__(self, oligomer):
+        self.oligomer = oligomer
+
+        thermo = calcHairpin(self.oligomer, output_structure=True)
+
+        self.tm = thermo.tm
+        self.dg = thermo.dg
+        self.dh = thermo.dh
+        self.ds = thermo.ds
+
+        self.structure = thermo.ascii_structure_lines
+
+
 class Oligomer:
     def __init__(self, oligomer, start=None, max_runs=4):
         base_runs_format = re.compile("".join(["A{", str(max_runs), "}|"]) +
@@ -19,8 +76,8 @@ class Oligomer:
         self.seq = oligomer
 
         self.Tm = calcTm(oligomer)
-        self.hairpin = calcHairpin(oligomer)
-        self.homodimer = calcHomodimer(oligomer)
+        self.hairpin = Hairpin(oligomer)
+        self.homodimer = Homodimer(oligomer)
         self.GC = SeqUtils.GC(oligomer)
 
         self.base_run = (re.match(base_runs_format, oligomer) is not None)
@@ -82,7 +139,7 @@ class PrimerPair:
         self.unst_primer = self.fwd
         if self.rvs.Tm < self.fwd.Tm:
             self.unst_primer = self.rvs
-        self.heterodimer = calcHeterodimer(self.fwd.seq, self.rvs.seq)
+        self.heterodimer = Heterodimer(self.fwd.seq, self.rvs.seq)
 
         self._genome = genome
         self._product = None
@@ -91,6 +148,8 @@ class PrimerPair:
         self._annealing_Tm_gap = None
         self._fwd_clamp = None
         self._rvs_clamp = None
+        self._fwd_product_heterodimer = None
+        self._rvs_product_heterodimer = None
         self._rating = None
 
     @property
@@ -206,7 +265,7 @@ class PrimerPair:
     def set_fwd_clamp(self):
         product = self.get_product()
 
-        fwd_clamp = calcEndStability(self.fwd.seq, product)
+        fwd_clamp = Clamp(self.fwd.seq, product)
         self._fwd_clamp = fwd_clamp
 
     def get_fwd_clamp(self):
@@ -219,7 +278,7 @@ class PrimerPair:
         product = self.get_product()
         rvs_compl_product = str(Seq(product).reverse_complement())
 
-        rvs_clamp = calcEndStability(self.rvs.seq, rvs_compl_product)
+        rvs_clamp = Clamp(self.rvs.seq, rvs_compl_product)
         self._rvs_clamp = rvs_clamp
 
     def get_rvs_clamp(self):

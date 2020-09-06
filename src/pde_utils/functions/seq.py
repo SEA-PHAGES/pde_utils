@@ -1,4 +1,7 @@
+from pdm_utils.pipelines import export_db
+
 from pde_utils.classes import kmers
+
 
 def map_cds_to_seq(alchemist, cds_list, mol_type="dna", data_cache=None):
     if data_cache is None:
@@ -6,9 +9,9 @@ def map_cds_to_seq(alchemist, cds_list, mol_type="dna", data_cache=None):
 
     cds_to_seq = {}
     for cds in cds_list:
-        if mol_type == "dna": 
+        if mol_type == "dna":
             parent_genome = data_cache.get(cds.genome_id)
-        
+
             if parent_genome is None:
                 parent_genome = export_db.get_single_genome(
                                             alchemist, cds.genome_id,
@@ -20,7 +23,7 @@ def map_cds_to_seq(alchemist, cds_list, mol_type="dna", data_cache=None):
 
             cds_to_seq[cds] = str(cds.seq)
         elif mol_type == "amino":
-            cds_to_seq[cds] = str(cds.translation) 
+            cds_to_seq[cds] = str(cds.translation)
 
     return cds_to_seq
 

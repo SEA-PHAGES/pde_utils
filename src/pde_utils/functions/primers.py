@@ -1,11 +1,11 @@
 from Bio.Seq import Seq
 
-from pde_utils.classes import primer_TD
+from pde_utils.classes import primer3
 
 
 def get_stable_oligomer(oligomer, tmMin=52, tmMax=58, hpn_dG_min=-2000,
                         homo_dG_min=-5000, GC_max=60, max_runs=4):
-    oligomer_TD = primer_TD.Oligomer(oligomer)
+    oligomer_TD = primer3.Oligomer(oligomer)
 
     stable = ((oligomer_TD.Tm >= tmMin and oligomer_TD.Tm <= tmMax) and
               (oligomer_TD.hairpin.dg > hpn_dG_min) and
