@@ -2,24 +2,6 @@ import textwrap
 
 from Bio.Seq import Seq
 
-from pde_utils.classes import primer3
-
-
-def get_stable_oligomer(oligomer, tmMin=52, tmMax=58, hpn_dG_min=-2000,
-                        homo_dG_min=-5000, GC_max=60, max_runs=4):
-    oligomer_TD = primer3.Oligomer(oligomer)
-
-    stable = ((oligomer_TD.Tm >= tmMin and oligomer_TD.Tm <= tmMax) and
-              (oligomer_TD.hairpin.dg > hpn_dG_min) and
-              (oligomer_TD.GC < GC_max) and
-              (oligomer_TD.homodimer.dg > homo_dG_min) and
-              (not oligomer_TD.base_run))
-
-    if stable:
-        return oligomer_TD
-    else:
-        return None
-
 
 def write_primer_txt_file(primer_pair, file_path):
     with file_path.open(mode="w") as filehandle:
@@ -31,7 +13,7 @@ def write_primer_txt_file(primer_pair, file_path):
                      "PRIMER PRODUCT\n"
                      "-----------------------------------------"
                      "----------------------------------------\n"
-                     f"Annealing Temp: {primer_pair.annealing_Tm}\u00BAC\n")
+                     f"Annealing Temp: {primer_pair.annealing_ta}\u00BAC\n")
 
         split_product = textwrap.wrap(primer_pair.product, 60)
         split_anti_product = textwrap.wrap(primer_pair.anti_product, 60)
@@ -116,18 +98,14 @@ def write_primer_txt_file(primer_pair, file_path):
                     f"{primer_pair.heterodimer.structure}\n\n")
 
         if primer_pair.fwd_antisense_heterodimer.structure_lines:
+            heterodimer = primer_pair.fwd_antisense_heterodimer
             filehandle.write(
                     "Forward/Antisense Internal Dimerization:\n"
-                    f"\t\u0394G: {primer_pair.fwd_antisense_heterodimer.dg}\n"
-                    f"\t\u0394H: {primer_pair.fwd_antisense_heterodimer.dh}\n"
-                    f"\t\u0394S: {primer_pair.fwd_antisense_heterodimer.ds}\n"
-                    "\n")
-            fwd_antisense_lines = []
-            for line in primer_pair.fwd_antisense_heterodimer.structure_lines:
-                fwd_antisense_lines.append(textwrap.wrap(
-                                                line, 60,
-                                                replace_whitespace=False,
-                                                drop_whitespace=False))
+                    f"\t\u0394G: {heterodimer.dg}\n"
+                    f"\t\u0394H: {heterodimer.dh}\n"
+                    f"\t\u0394S: {heterodimer.ds}\n"
+                    "\n"
+                    f"{heterodimer.reduced_structure}")
 
             for i in range(len(fwd_antisense_lines[0])):
                 for split_lines in fwd_antisense_lines:

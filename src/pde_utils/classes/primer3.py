@@ -38,6 +38,100 @@ class Heterodimer:
         self.structure = thermo.ascii_structure
         self.structure_lines = thermo.ascii_structure_lines
 
+        self._formatted_structure_lines = None
+        self._reduced_structure = None
+
+    @property
+    def formatted_structure_lines(self):
+        return self.get_formatted_structure_lines()
+
+    @property
+    def reduced_structure(self):
+        return self.get_reduced_structure()
+
+    def set_formatted_structure_lines(self):
+        if not self.structure_lines:
+            return None
+        if len(self.structure_lines[0]) <= 4:
+            return None
+
+        nucleotides = ["A", "T", "G", "C"]
+
+        oligomer_chars = [char for char in self.structure_lines[0][4:]]
+        oligomer_match_chars = [char for char in self.structure_lines[1][4:]]
+        target_match_chars = [char for char in self.structure_lines[2][4:]]
+        target_chars = [char for char in self.structure_lines[3][4:]]
+
+        combined_match_chars = []
+
+        for i in range(len(oligomer_match_chars)):
+            if oligomer_match_chars[i] in nucleotides:
+                oligomer_chars[i] = oligomer_match_chars[i]
+                target_chars[i] = target_match_chars[i]
+
+                combined_match_chars.append("|")
+            else:
+                combined_match_chars.append(" ")
+
+        oligomer_line = "".join(oligomer_chars)
+        match_line = "".join(combined_match_chars)
+        target_line = "".join(target_chars)
+
+        self._formatted_sturcture_lines = [oligomer_line, match_line,
+                                           target_line]
+
+    def get_formatted_structure_lines(self):
+        if self._formatted_structure_lines is None:
+            self.set_formatted_structure_lines()
+
+        return self._formatted_structure_lines
+
+    def set_reduced_structure(self):
+        formatted_structure_lines = self.get_formatted_structure_lines()
+        if formatted_structure_lines is None:
+            return None
+
+        nucleotides = ["A", "T", "G", "C"]
+
+        match_start = None
+        for i in range(len(formatted_structure_lines[0])):
+            if formatted_structure_lines[i] in nucleotides:
+                match_start = i
+                break
+
+        if match_start is None:
+            return match_start
+
+        len_oligomer = len(self.oligomer)
+        nucleotide_counter = 1
+
+        match_end = None
+        for i in range(len(formatted_structure_lines[0])):
+            if formatted_structure_lines[i] in nucleotides:
+                nucleotide_counter += 1
+
+            if nucleotide_counter == len_oligomer:
+                match_end = i + 1
+                break
+
+        if match_end is None:
+            return match_end
+
+        oligomer_line = formatted_structure_lines[0][match_start:match_end]
+        match_line = formatted_structure_lines[1][match_start:match_end]
+        target_line = formatted_structure_lines[2][match_start:match_end]
+
+        self._reduced_structure = (
+                    f"5' {oligomer_line} 3'\n   {match_line}   \n"
+                    f"3' {target_line} 5'\n"
+                    "...{match_start+1}..{match_end}...\n")
+
+    def get_reduced_structure(self):
+        if self._reduced_structure is None:
+            self.set_reduced_structure()
+
+        return self._reduced_structure
+
 
 class Homodimer:
     def __init__(self, oligomer):
@@ -147,8 +241,8 @@ class PrimerPair:
         self._genome = genome
         self._product = None
         self._rvs_product = None
-        self._annealing_Tm = None
-        self._annealing_Tm_gap = None
+        self._annealing_ta = None
+        self._annealing_ta_gap = None
         self._fwd_clamp = None
         self._rvs_clamp = None
         self._fwd_antisense_heterodimer = None
@@ -167,8 +261,8 @@ class PrimerPair:
 
         self._product = None
         self._anti_product = None
-        self._annealing_Tm = None
-        self._annealing_Tm_gap = None
+        self._annealing_ta = None
+        self._annealing_ta_gap = None
         self._fwd_clamp = None
         self._rvs_clamp = None
         self._fwd_antisense_heterodimer = None
@@ -185,12 +279,12 @@ class PrimerPair:
         return self.get_anti_product()
 
     @property
-    def annealing_Tm(self):
-        return self.get_annealing_Tm()
+    def annealing_ta(self):
+        return self.get_annealing_ta()
 
     @property
-    def annealing_Tm_gap(self):
-        return self.get_annealing_Tm_gap()
+    def annealing_ta_gap(self):
+        return self.get_annealing_ta_gap()
 
     @property
     def fwd_clamp(self):
@@ -257,35 +351,17 @@ class PrimerPair:
 
         return self._anti_product
 
-    def set_annealing_Tm(self):
+    def set_annealing_ta(self):
         product = self.get_product()
-        anneal_tm = 0.3*self.unst_primer.Tm + 0.7*calcTm(product) - 14.9
+        anneal_tm = ((0.3*self.unst_primer.Tm) + (0.7*calcTm(product))) - 14.9
 
-        self._annealing_Tm = anneal_tm
+        self._annealing_ta = anneal_tm
 
-    def get_annealing_Tm(self):
-        if self._annealing_Tm is None:
-            self.set_annealing_Tm()
+    def get_annealing_ta(self):
+        if self._annealing_ta is None:
+            self.set_annealing_ta()
 
-        return self._annealing_Tm
-
-    def set_annealing_Tm_gap(self):
-        annealing_Tm = self.get_annealing_Tm()
-
-        fwd_gap = abs(annealing_Tm - self.fwd.Tm)
-        rvs_gap = abs(annealing_Tm - self.fwd.Tm)
-
-        annealing_Tm_gap = fwd_gap
-        if rvs_gap > fwd_gap:
-            annealing_Tm_gap = rvs_gap
-
-        self._annealing_Tm_gap = annealing_Tm_gap
-
-    def get_annealing_Tm_gap(self):
-        if self._annealing_Tm_gap is None:
-            self.set_annealing_Tm_gap()
-
-        return self._annealing_Tm_gap
+        return self._annealing_ta
 
     def set_fwd_clamp(self):
         anti_product = self.get_anti_product()

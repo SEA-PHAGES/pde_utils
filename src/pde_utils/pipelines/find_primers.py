@@ -19,7 +19,7 @@ from pdm_utils.functions import pipelines_basic
 from pdm_utils.pipelines import export_db
 
 from pde_utils.classes import primer3
-from pde_utils.functions import primers
+from pde_utils.functions import fileio
 from pde_utils.functions import seq
 
 # GLOBAL VARIABLES
@@ -44,7 +44,14 @@ def main(unparsed_args):
     execute_find_primers(alchemist, folder_path=args.folder_path,
                          folder_name=args.folder_name, values=values,
                          filters=args.filters, groups=args.groups,
-                         verbose=args.verbose)
+                         verbose=args.verbose, threads=args.threads,
+                         prc=args.prc, minD=args.minD, maxD=args.maxD,
+                         hpn_min=args.hpn_min, ho_min=args.ho_min,
+                         het_min=args.het_min, GC_max=args.GC,
+                         len_oligomer=args.oligomer_length, tm_min=args.tm_min,
+                         tm_max=args.tm_max, tm_gap=args.tm_gap,
+                         ta_min=args.ta_min, ta_max=args.ta_max,
+                         mode=args.mode)
 
 
 def parse_find_primers(unparsed_args):
@@ -90,6 +97,84 @@ def parse_find_primers(unparsed_args):
             Follow selection argument with formatted column expressions:
                 {Table}.{Column}={Value}
         """
+    NUMBER_THREADS_HELP = """
+        Pipeline option that allows for multithreading of workflows.
+            Follow selection argument with number of threads to be used
+        """
+
+    MODE_HELP = """
+        Find primer parameter option that changes the characteristics of
+        the primer pairs outputted.
+        """
+    OLIGOMER_LENGTH_HELP = """
+        Find primer parameter option that sets the desired length of the
+        oligomers used to generate given primers
+            Follow parameter argument with the desired length in single bases.
+        """
+    PHAM_REPRESENTATION_CUTOFF_HELP = """
+        Find primer parameter option that changes the pham representation
+        prefilter threshold.
+            Follow parameter argument with cutoff value [0-1]
+        """
+    MINIMUM_PRODUCT_LENGTH_HELP = """
+        Find primer parameter option that sets the minimum length of the
+        PCR product created from a pair of given primers
+            Follow parameter argument with the desired length in single bases.
+        """
+    MAXIMUM_PRODUCT_LENGTH_HELP = """
+        Find primer parameter option that sets the minimum length of the
+        PCR product created from a pair of given primers
+            Follow parameter argument with the desired length in single bases.
+        """
+    HAIRPIN_GIBBS_FREE_ENERGY_MINIMUM_HELP = """
+        Find primer parameter option that sets the minimum threshold for the
+        Gibbs free energy of hairpin formation for any oligomer in a pair
+        of given primers.
+            Follow parameter argument with the desired minimum kcal/mol.
+        """
+    HOMODIMER_GIBBS_FREE_ENERGY_MINIMUM_HELP = """
+        Find primer parameter option that sets the minimum threshold for the
+        Gibbs free energy of homodimer formation for any oligomer in a pair
+        of given primers.
+            Follow parameter argument with the desired minimum kcal/mol.
+        """
+    HETERODIMER_GIBBS_FREE_ENERGY_MINIMUM_HELP = """
+        Find primer parameter option that sets the minimum threshold for the
+        Gibbs free energy of heterodimer formation for the oligomers in a pair
+        of given primers.
+            Follow parameter argument with the desired minimum kcal/mol.
+        """
+    MAXIMUM_GC_CONTENT_HELP = """
+        Find primer parameter option that sets the maximum threshold for the
+        GC content percentage of any oligomer in a pair of given primers.
+            Follow parameter argument with the desired percentage [0-100].
+        """
+    MINIMUM_MELTING_TEMPERATURE_HELP = """
+        Find primer parameter option that sets the minimum melting temperature
+        threshold of any oligomer in a pair of given primers.
+            Follow parameter argument with the desired temperature in Celsius.
+        """
+    MAXIMUM_MELTING_TEMPERATURE_HELP = """
+        Find primer parameter option that sets the maximum melting temperature
+        threshold of any oligomer in a pair of given primers.
+            Follow parameter argument with the desired temperature in Celsius.
+        """
+    MAXIMUM_MELTING_TEMPERATURE_GAP_HELP = """
+        Find primer parameter option that sets the maximum melting temperature
+        gap threshold between the oligomers in a pair of given primers.
+            Follow parameter argument with the desired temperature gap in
+            Celsius.
+        """
+    MAXIMUM_OPTIMAL_ANNEALING_TEMPERATURE_HELP = """
+        Find primer parameter option that sets the maximum optimal annealing
+        temperature threshold of a any pair of given primers.
+            Follow parameter argument with the desired temperature in Celsius.
+        """
+    MINIMUM_OPTIMAL_ANNEALING_TEMPERATURE_HELP = """
+        Find primer parameter option that sets the maximum optimal annealing
+        temperature threshold of a any pair of given primers.
+            Follow parameter argument with the desired temperature in Celsius.
+        """
 
     parser = argparse.ArgumentParser()
 
@@ -104,7 +189,7 @@ def parse_find_primers(unparsed_args):
                         type=Path, help=FOLDER_PATH_HELP)
     parser.add_argument("-v", "--verbose", action="store_true",
                         help=VERBOSE_HELP)
-    parser.add_argument("-th", "--threads")
+    parser.add_argument("-th", "--threads", type=int, help=NUMBER_THREADS_HELP)
 
     parser.add_argument("-if", "--import_file", dest="input",
                         type=pipelines_basic.convert_file_path,
@@ -116,20 +201,38 @@ def parse_find_primers(unparsed_args):
     parser.add_argument("-g", "--group_by", nargs="*", dest="groups",
                         help=GROUP_BY_HELP)
 
-    parser.add_argument("-prc")
-    parser.add_argument("-minD")
-    parser.add_argument("-maxD")
-    parser.add_argument("-hpn_min")
-    parser.add_argument("-ho_min")
-    parser.add_argument("-het_min")
-    parser.add_argument("-GC")
+    parser.add_argument("-mo", help=MODE_HELP)
+    parser.add_argument("-prc", type=float,
+                        help=PHAM_REPRESENTATION_CUTOFF_HELP)
+    parser.add_argument("-minD", type=int, help=MINIMUM_PRODUCT_LENGTH_HELP)
+    parser.add_argument("-maxD", type=int, help=MAXIMUM_PRODUCT_LENGTH_HELP)
+    parser.add_argument("-hpn_min", type=int,
+                        help=HAIRPIN_GIBBS_FREE_ENERGY_MINIMUM_HELP)
+    parser.add_argument("-ho_min", type=int,
+                        help=HOMODIMER_GIBBS_FREE_ENERGY_MINIMUM_HELP)
+    parser.add_argument("-het_min", type=int,
+                        help=HETERODIMER_GIBBS_FREE_ENERGY_MINIMUM_HELP)
+    parser.add_argument("-GC", type=float, help=MAXIMUM_GC_CONTENT_HELP)
     parser.add_argument("-max_std")
-    parser.add_argument("-len")
-    parser.add_argument("-ex")
+    parser.add_argument("-len", "--oligomer_length", type=int,
+                        help=OLIGOMER_LENGTH_HELP)
+    parser.add_argument("-tm_min", type=float,
+                        help=MINIMUM_MELTING_TEMPERATURE_HELP)
+    parser.add_argument("-tm_max", type=float,
+                        help=MAXIMUM_MELTING_TEMPERATURE_HELP)
+    parser.add_argument("-tm_gap", type=float,
+                        help=MAXIMUM_MELTING_TEMPERATURE_GAP_HELP)
+    parser.add_argument("-ta_min", type=float,
+                        help=MAXIMUM_OPTIMAL_ANNEALING_TEMPERATURE_HELP)
+    parser.add_argument("-ta_max", type=float,
+                        help=MINIMUM_OPTIMAL_ANNEALING_TEMPERATURE_HELP)
 
     parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME, folder_path=None,
-                        config_file=None, verbose=False, input=[],
-                        filters="", groups=[])
+                        config_file=None, verbose=False, input=[], threads=1,
+                        filters="", groups=[], prc=0.70, minD=900, maxD=1100,
+                        hpn_min=-2000, ho_min=-5000, het_min=-5000, GC=60.0,
+                        oligomer_length=20, tm_min=52.0, tm_max=58,
+                        tm_gap=5.0, ta_min=48.0, ta_max=68.0, mode=0)
 
     parsed_args = parser.parse_args(unparsed_args[2:])
     return parsed_args
@@ -139,10 +242,10 @@ def execute_find_primers(alchemist, folder_path=None,
                          folder_name=DEFAULT_FOLDER_NAME, values=None,
                          filters="", groups=[], verbose=False,
                          threads=4, prc=0.7, max_std=3000, len_oligomer=20,
-                         minD=900, maxD=1100, tmMin=52, tmMax=58,
-                         hpn_dG_min=-2000, homo_dG_min=-5000, GC_max=60,
-                         hetero_dG_min=-5000, tm_gap=5, Ta_gap=5,
-                         exclude=True):
+                         minD=900, maxD=1100, tm_min=52.0, tm_max=58.0,
+                         hpn_min=-2000, ho_min=-5000, GC_max=60.0,
+                         het_min=-5000, tm_gap=5.0, ta_min=48.0,
+                         ta_max=68.0, mode=0):
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
     working_path = pipelines_basic.create_working_path(
@@ -185,9 +288,9 @@ def execute_find_primers(alchemist, folder_path=None,
                                     alchemist, pham_gene_map, genome_map,
                                     verbose=verbose, threads=threads, prc=prc,
                                     max_std=max_std, minD=minD, maxD=maxD,
-                                    len_oligomer=len_oligomer, tmMin=tmMin,
-                                    tmMax=tmMax, hpn_dG_min=hpn_dG_min,
-                                    homo_dG_min=homo_dG_min, GC_max=GC_max)
+                                    len_oligomer=len_oligomer, tm_min=tm_min,
+                                    tm_max=tm_max, hpn_min=hpn_min,
+                                    ho_min=ho_min, GC_max=GC_max)
 
         if (not F_results) or (not R_results):
             if verbose:
@@ -212,8 +315,9 @@ def execute_find_primers(alchemist, folder_path=None,
             print(f"...Testing primer pairs for '{mapped_path}'...")
         primer_pairs = test_primer_pairs(primer_pairs, genome_map,
                                          threads=threads, verbose=verbose,
-                                         hetero_dG_min=hetero_dG_min,
-                                         Ta_gap_max=Ta_gap, tm_gap_max=tm_gap)
+                                         het_min=het_min,
+                                         ta_min=ta_min, ta_max=ta_max,
+                                         tm_gap_max=tm_gap)
 
         if primer_pairs:
             if verbose:
@@ -223,20 +327,19 @@ def execute_find_primers(alchemist, folder_path=None,
 
     if not results_map:
         print("No primer pairs found with current parameters...")
-    else:
-        if exclude:
-            results_map = select_primer_pairs(results_map, verbose=verbose)
+
+    results_map = select_primer_pairs(results_map, verbose=verbose, mode=mode)
 
     for mapped_path, primer_pairs in results_map.items():
         pipelines_basic.create_working_dir(mapped_path)
         file_path = mapped_path.joinpath("primer.txt")
-        primers.write_primer_txt_file(primer_pairs[0][0], file_path)
+        fileio.write_primer_txt_file(primer_pairs[0][0], file_path)
 
 
 def find_oligomers(alchemist, pham_gene_map, genome_map,
                    verbose=False, threads=4, prc=0.8, max_std=3000,
-                   len_oligomer=20, minD=900, maxD=1100, tmMin=52, tmMax=58,
-                   hpn_dG_min=-2000, homo_dG_min=-5000, GC_max=60):
+                   len_oligomer=20, minD=900, maxD=1100, tm_min=52, tm_max=58,
+                   hpn_min=-2000, ho_min=-5000, GC_max=60):
     pham_histogram = {}
     for pham, genes in pham_gene_map.items():
         pham_histogram[pham] = len(genes)
@@ -271,8 +374,8 @@ def find_oligomers(alchemist, pham_gene_map, genome_map,
         results.append(thread_pool.apply_async(
                 process_find_oligomers, args=(work_bundle, managed_genome_map,
                                               max_std, len_oligomer, minD,
-                                              maxD, tmMin, tmMax, hpn_dG_min,
-                                              homo_dG_min, GC_max, verbose)))
+                                              maxD, tm_min, tm_max, hpn_min,
+                                              ho_min, GC_max, verbose)))
 
     for result in results:
         F_pos_map, R_pos_map = result.get()
@@ -322,8 +425,8 @@ def match_oligomers(F_oligomer_results, R_oligomer_results,
 
 
 def test_primer_pairs(primer_pairs, genome_map, verbose=False,
-                      threads=4, hetero_dG_min=-5000, tm_gap_max=5,
-                      Ta_gap_max=5, minD=900, maxD=1100):
+                      threads=4, het_min=-5000, tm_gap_max=5.0,
+                      ta_min=48.0, ta_max=68.0, minD=900, maxD=1100):
     thread_pool = multiprocessing.Pool(processes=threads)
     thread_manager = multiprocessing.Manager()
 
@@ -346,7 +449,8 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
                                  work_items, failed_product,
                                  failed_length, failed_thermo,
                                  managed_genome_map, minD,
-                                 maxD, tm_gap_max, hetero_dG_min, Ta_gap_max)))
+                                 maxD, tm_gap_max, het_min,
+                                 ta_min, ta_max)))
 
     tested_primer_pairs = []
     for result in results:
@@ -372,43 +476,51 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
     return list(tested_primer_pairs)
 
 
-def select_primer_pairs(results_map, verbose=False):
+def select_primer_pairs(results_map, verbose=False, mode=0):
     selected_results_map = {}
 
-    for mapped_path, data in results_map.items():
-        if verbose:
-            print(f"Selecting primers for '{mapped_path}'...")
+    if mode == 0:
+        return results_map
 
-        valid_primer_num = None
-        for i in range(len(data[0])):
-            primer_pair = data[0][i]
+    if mode >= 1:
+        for mapped_path, data in results_map.items():
+            if verbose:
+                print(f"Selecting primers for '{mapped_path}'...")
 
-            valid_pair = True
-            for inner_mapped_path, inner_data in results_map.items():
-                if mapped_path == mapped_path:
-                    continue
+            valid_primer_num = None
+            for i in range(len(data[0])):
+                primer_pair = data[0][i]
 
-                for genome_id, genome in inner_data[1]:
-                    try:
-                        primer_pair.genome = str(genome.seq)
-                        primer_pair.product
-                        valid_pair = False
-                    except ValueError:
-                        pass
+                valid_pair = True
+                for inner_mapped_path, inner_data in results_map.items():
+                    if mapped_path == mapped_path:
+                        continue
 
-                if not valid_pair:
+                    for genome_id, genome in inner_data[1]:
+                        try:
+                            primer_pair.genome = str(genome.seq)
+                            primer_pair.product
+                            valid_pair = False
+                        except ValueError:
+                            pass
+
+                    if not valid_pair:
+                        break
+
+                if valid_pair:
+                    valid_primer_num = i
                     break
 
-            if valid_pair:
-                valid_primer_num = i
-                break
+            if valid_primer_num is not None:
+                selected_results_map[mapped_path] = (
+                                                data[0][valid_primer_num:],)
+            else:
+                print(f"All primer pairs for '{mapped_path}' generate "
+                      "products against non-grouped genomes")
+                sys.exit(1)
 
-        if valid_primer_num is not None:
-            selected_results_map[mapped_path] = (data[0][valid_primer_num:],)
-        else:
-            print(f"All primer pairs for '{mapped_path}' generate products "
-                  "against non-grouped genomes")
-            sys.exit(1)
+    if mode >= 2:
+        pass
 
     return selected_results_map
 
@@ -440,7 +552,7 @@ def invert_dictionary(dictionary):
 
 
 def process_find_oligomers(work_bundle, work_data_cache, max_std, len_oligomer,
-                           minD, maxD, tmMin, tmMax, hpn_dG_min, homo_dG_min,
+                           minD, maxD, tm_min, tm_max, hpn_min, ho_min,
                            GC_max, verbose):
     pham = work_bundle[0]
     cds_list = work_bundle[1]
@@ -485,15 +597,15 @@ def process_find_oligomers(work_bundle, work_data_cache, max_std, len_oligomer,
 
     F_oligomers = get_stable_oligomers(
                                     conserved_kmer_data, avg_start, "F",
-                                    tmMin=tmMin, tmMax=tmMax,
-                                    hpn_dG_min=hpn_dG_min,
-                                    homo_dG_min=homo_dG_min,
+                                    tm_min=tm_min, tm_max=tm_max,
+                                    hpn_min=hpn_min,
+                                    ho_min=ho_min,
                                     GC_max=GC_max)
     R_oligomers = get_stable_oligomers(
                                     conserved_kmer_data, avg_start, "R",
-                                    tmMin=tmMin, tmMax=tmMax,
-                                    hpn_dG_min=hpn_dG_min,
-                                    homo_dG_min=homo_dG_min,
+                                    tm_min=tm_min, tm_max=tm_max,
+                                    hpn_min=hpn_min,
+                                    ho_min=ho_min,
                                     GC_max=GC_max)
 
     num_stable_oligomers = len(F_oligomers) + len(R_oligomers)
@@ -537,7 +649,7 @@ def process_match_oligomers(work_items, reverse_position_map, minD, maxD):
 
 def process_test_primer_pairs(work_items, failed_product, failed_length,
                               failed_thermo, genome_map, minD, maxD,
-                              tm_gap_max, hetero_dG_min, Ta_gap_max):
+                              tm_gap_max, het_min, ta_min, ta_max):
     pair_results = []
     for primer_pair in work_items:
         valid_primers = True
@@ -560,8 +672,9 @@ def process_test_primer_pairs(work_items, failed_product, failed_length,
 
             valid_primers = (
                     (primer_pair.Tm_gap < tm_gap_max) and
-                    (primer_pair.heterodimer.dg >= hetero_dG_min) and
-                    (primer_pair.annealing_Tm_gap < Ta_gap_max))
+                    (primer_pair.heterodimer.dg >= het_min) and
+                    (primer_pair.annealing_ta > ta_min) and
+                    (primer_pair.annealing_ta < ta_max))
 
             if not valid_primers:
                 failed_thermo.value += 1
@@ -574,19 +687,23 @@ def process_test_primer_pairs(work_items, failed_product, failed_length,
 
 
 def get_stable_oligomers(conserved_kmer_data, avg_start, orientation,
-                         tmMin=52, tmMax=58, hpn_dG_min=-2000,
-                         homo_dG_min=-5000, GC_max=60):
+                         tm_min=52, tm_max=58, hpn_min=-2000,
+                         ho_min=-5000, GC_max=60):
     oligomers = []
 
     for kmer, kmer_data in conserved_kmer_data.items():
         if kmer_data[0][0].orientation != orientation:
             kmer = str(Seq(kmer).reverse_complement())
 
-        oligomer = primers.get_stable_oligomer(
-                                       kmer, tmMin=tmMin, tmMax=tmMax,
-                                       GC_max=GC_max, hpn_dG_min=hpn_dG_min,
-                                       homo_dG_min=homo_dG_min)
-        if oligomer is None:
+        oligomer = primer3.Oligomer(kmer)
+
+        stable = ((oligomer.Tm >= tm_min and oligomer.Tm <= tm_max) and
+                  (oligomer.hairpin.dg > hpn_min) and
+                  (oligomer.GC < GC_max) and
+                  (oligomer.homodimer.dg > ho_min) and
+                  (not oligomer.base_run))
+
+        if not stable:
             continue
 
         avg_kmer_start = 0
