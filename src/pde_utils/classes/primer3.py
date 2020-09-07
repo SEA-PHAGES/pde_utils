@@ -35,7 +35,8 @@ class Heterodimer:
         self.dh = thermo.dh
         self.ds = thermo.ds
 
-        self.structure = thermo.ascii_structure_lines
+        self.structure = thermo.ascii_structure
+        self.structure_lines = thermo.ascii_structure_lines
 
 
 class Homodimer:
@@ -49,7 +50,8 @@ class Homodimer:
         self.dh = thermo.dh
         self.ds = thermo.ds
 
-        self.structure = thermo.ascii_structure_lines
+        self.structure = thermo.ascii_structure
+        self.structure_lines = thermo.ascii_structure_lines
 
 
 class Hairpin:
@@ -63,7 +65,8 @@ class Hairpin:
         self.dh = thermo.dh
         self.ds = thermo.ds
 
-        self.structure = thermo.ascii_structure_lines
+        self.structure = thermo.ascii_structure
+        self.structure_lines = thermo.ascii_structure_lines
 
 
 class Oligomer:
@@ -103,9 +106,9 @@ class Oligomer:
     def calc_rating(self, oligomer):
         rating = 0
 
-        rating += -100 * (10**(oligomer.hairpin.dg/-1400) / 10**(-2000/-1400))
-        rating += -100 * (10**(oligomer.homodimer.dg/-1400) /
-                          10**(-5000/-1400))
+        rating += -4 * (10**(oligomer.hairpin.dg/-1400) / 10**(-2000/-1400))
+        rating += -4 * (10**(oligomer.homodimer.dg/-1400) /
+                        10**(-5000/-1400))
 
         return rating
 
@@ -148,8 +151,10 @@ class PrimerPair:
         self._annealing_Tm_gap = None
         self._fwd_clamp = None
         self._rvs_clamp = None
-        self._fwd_product_heterodimer = None
-        self._rvs_product_heterodimer = None
+        self._fwd_antisense_heterodimer = None
+        self._rvs_antisense_heterodimer = None
+        self._rvs_sense_heterodimer = None
+        self._fwd_sense_heterodimer = None
         self._rating = None
 
     @property
@@ -161,19 +166,23 @@ class PrimerPair:
         self._genome = genome
 
         self._product = None
-        self._rvs_product = None
+        self._anti_product = None
         self._annealing_Tm = None
         self._annealing_Tm_gap = None
         self._fwd_clamp = None
         self._rvs_clamp = None
+        self._fwd_antisense_heterodimer = None
+        self._rvs_antisense_heterodimer = None
+        self._fwd_sense_heterodimer = None
+        self._rvs_sense_heteroimer = None
 
     @property
     def product(self):
         return self.get_product()
 
     @property
-    def rvs_product(self):
-        return self.get_rvs_product()
+    def anti_product(self):
+        return self.get_anti_product()
 
     @property
     def annealing_Tm(self):
@@ -190,6 +199,22 @@ class PrimerPair:
     @property
     def rvs_clamp(self):
         return self.get_rvs_clamp()
+
+    @property
+    def fwd_antisense_heterodimer(self):
+        return self.get_fwd_antisense_heterodimer()
+
+    @property
+    def rvs_antisense_heterodimer(self):
+        return self.get_rvs_antisense_heterodimer()
+
+    @property
+    def fwd_sense_heterodimer(self):
+        return self.get_fwd_sense_heterodimer()
+
+    @property
+    def rvs_sense_heterodimer(self):
+        return self.get_rvs_sense_heterodimer()
 
     @property
     def rating(self):
@@ -221,16 +246,16 @@ class PrimerPair:
 
         return self._product
 
-    def set_rvs_product(self):
+    def set_anti_product(self):
         product = self.get_product()
 
-        self._rvs_product = str(Seq(product).reverse_complement)
+        self._anti_product = str(Seq(product).reverse_complement())
 
-    def get_rvs_product(self):
-        if self._rvs_product is None:
-            self.set_rvs_product()
+    def get_anti_product(self):
+        if self._anti_product is None:
+            self.set_anti_product()
 
-        return self._rvs_product
+        return self._anti_product
 
     def set_annealing_Tm(self):
         product = self.get_product()
@@ -263,9 +288,9 @@ class PrimerPair:
         return self._annealing_Tm_gap
 
     def set_fwd_clamp(self):
-        product = self.get_product()
+        anti_product = self.get_anti_product()
 
-        fwd_clamp = Clamp(self.fwd.seq, product)
+        fwd_clamp = Clamp(self.fwd.seq, anti_product)
         self._fwd_clamp = fwd_clamp
 
     def get_fwd_clamp(self):
@@ -276,16 +301,59 @@ class PrimerPair:
 
     def set_rvs_clamp(self):
         product = self.get_product()
-        rvs_compl_product = str(Seq(product).reverse_complement())
 
-        rvs_clamp = Clamp(self.rvs.seq, rvs_compl_product)
+        rvs_clamp = Clamp(self.rvs.seq, product)
         self._rvs_clamp = rvs_clamp
 
     def get_rvs_clamp(self):
         if self._rvs_clamp is None:
             self.set_rvs_clamp()
 
-        return self._fwd_clamp
+        return self._rvs_clamp
+
+    def set_fwd_antisense_heterodimer(self):
+        internal_anti_product = self.anti_product[:-len(self.fwd.seq)]
+
+        self._fwd_antisense_heterodimer = Heterodimer(self.fwd.seq,
+                                                      internal_anti_product)
+
+    def get_fwd_antisense_heterodimer(self):
+        if self._fwd_antisense_heterodimer is None:
+            self.set_fwd_antisense_heterodimer()
+
+        return self._fwd_antisense_heterodimer
+
+    def set_rvs_antisense_heterodimer(self):
+        self._rvs_antisense_heterodimer = Heterodimer(self.rvs.seq,
+                                                      self.anti_product)
+
+    def get_rvs_antisense_heterodimer(self):
+        if self._rvs_antisense_heterodimer is None:
+            self.set_rvs_antisense_heterodimer()
+
+        return self._rvs_antisense_heterodimer
+
+    def set_fwd_sense_heterodimer(self):
+        self._fwd_sense_heterodimer = Heterodimer(self.fwd.seq,
+                                                  self.product)
+
+    def get_fwd_sense_heterodimer(self):
+        if self._fwd_sense_heterodimer is None:
+            self.set_fwd_sense_heterodimer()
+
+        return self._fwd_sense_heterodimer
+
+    def set_rvs_sense_heterodimer(self):
+        internal_product = self.product[:-len(self.rvs.seq)]
+
+        self._rvs_sense_heterodimer = Heterodimer(self.rvs.seq,
+                                                  internal_product)
+
+    def get_rvs_sense_heterodimer(self):
+        if self._rvs_sense_heterodimer is None:
+            self.set_rvs_sense_heterodimer()
+
+        return self._rvs_sense_heterodimer
 
     def set_rating(self):
         self._rating = self.calc_rating(self)
@@ -302,11 +370,22 @@ class PrimerPair:
 
         rating += primer_pair.fwd.rating
         rating += primer_pair.rvs.rating
-        rating += -100 * (10**(primer_pair.heterodimer.dg/-1400) /
-                          10**(-5000/-1400))
-        rating += -10 * (1 / ((10**(primer_pair.fwd_clamp.dg / -1400)) /
-                              (10**(-3000 / -1400))))
-        rating += -10 * (1 / ((10**(primer_pair.rvs_clamp.dg / -1400)) /
-                              (10**(-3000 / -1400))))
+
+        rating += -4 * (10**(primer_pair.heterodimer.dg/-1400) /
+                        10**(-5000/-1400))
+
+        rating += -4 * (1 / ((10**(primer_pair.fwd_clamp.dg / -1400)) /
+                             (10**(-3000 / -1400))))
+        rating += -4 * (1 / ((10**(primer_pair.rvs_clamp.dg / -1400)) /
+                             (10**(-3000 / -1400))))
+
+        rating += -4 * (10**(primer_pair.fwd_antisense_heterodimer.dg/-1400)
+                        / 10**(-5000/-1400))
+        rating += -4 * (10**(primer_pair.rvs_antisense_heterodimer.dg/-1400)
+                        / 10**(-5000/-1400))
+        rating += -4 * (10**(primer_pair.fwd_sense_heterodimer.dg/-1400)
+                        / 10**(-5000/-1400))
+        rating += -4 * (10**(primer_pair.rvs_sense_heterodimer.dg/-1400)
+                        / 10**(-5000/-1400))
 
         return rating

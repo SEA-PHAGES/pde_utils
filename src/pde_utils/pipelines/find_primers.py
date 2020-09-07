@@ -181,7 +181,7 @@ def execute_find_primers(alchemist, folder_path=None,
 
         if verbose:
             print(f"...Identifying primer pairs for '{mapped_path}'...")
-        primer_pairs = find_primer_pairs(
+        F_results, R_results = find_oligomers(
                                     alchemist, pham_gene_map, genome_map,
                                     verbose=verbose, threads=threads, prc=prc,
                                     max_std=max_std, minD=minD, maxD=maxD,
@@ -189,8 +189,19 @@ def execute_find_primers(alchemist, folder_path=None,
                                     tmMax=tmMax, hpn_dG_min=hpn_dG_min,
                                     homo_dG_min=homo_dG_min, GC_max=GC_max)
 
+        if (not F_results) or (not R_results):
+            if verbose:
+                print(f"No valid oligomers found for '{mapped_path.name}'")
+            continue
+
+        if verbose:
+            print("...Matching oligomers to create primer pairs...")
+
+        primer_pairs = match_oligomers(F_results, R_results,
+                                       minD=minD, maxD=maxD, threads=threads)
+
         if not primer_pairs:
-            print(f"No primer pairs found for '{mapped_path}' with "
+            print(f"No valid primer pairs found for '{mapped_path}' with "
                   "current parameters...")
             continue
 
@@ -211,7 +222,7 @@ def execute_find_primers(alchemist, folder_path=None,
             results_map[mapped_path] = (primer_pairs, genome_map)
 
     if not results_map:
-        print("No primer pairs found in total with current parameters...")
+        print("No primer pairs found with current parameters...")
     else:
         if exclude:
             results_map = select_primer_pairs(results_map, verbose=verbose)
@@ -222,23 +233,24 @@ def execute_find_primers(alchemist, folder_path=None,
         primers.write_primer_txt_file(primer_pairs[0][0], file_path)
 
 
-def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
-                      threads=4, prc=0.8, max_std=3000, len_oligomer=20,
-                      minD=900, maxD=1100, tmMin=52, tmMax=58,
-                      hpn_dG_min=-2000, homo_dG_min=-5000, GC_max=60):
+def find_oligomers(alchemist, pham_gene_map, genome_map,
+                   verbose=False, threads=4, prc=0.8, max_std=3000,
+                   len_oligomer=20, minD=900, maxD=1100, tmMin=52, tmMax=58,
+                   hpn_dG_min=-2000, homo_dG_min=-5000, GC_max=60):
     pham_histogram = {}
     for pham, genes in pham_gene_map.items():
         pham_histogram[pham] = len(genes)
     pham_histogram = basic.sort_histogram(pham_histogram)
 
+    thread_pool = multiprocessing.Pool(processes=threads)
     thread_manager = multiprocessing.Manager()
 
     managed_genome_map = thread_manager.dict()
     managed_genome_map.update(genome_map)
 
-    work_queue = thread_manager.Queue()
-    F_pos_oligomer_map = thread_manager.dict()
-    R_pos_oligomer_map = thread_manager.dict()
+    work_items = []
+    F_pos_oligomer_map = {}
+    R_pos_oligomer_map = {}
 
     for pham, count in pham_histogram.items():
         pham_per = count/len(genome_map)
@@ -252,37 +264,68 @@ def find_primer_pairs(alchemist, pham_gene_map, genome_map, verbose=False,
 
         cds_list = export_db.parse_feature_data(alchemist,
                                                 values=pham_gene_map[pham])
-        work_queue.put((pham, cds_list))
+        work_items.append((pham, cds_list))
 
-    alive_threads = []
-    for _ in range(threads):
-        thread = multiprocessing.Process(
-                            target=process_find_primer_pairs,
-                            args=(work_queue, F_pos_oligomer_map,
-                                  R_pos_oligomer_map,
-                                  managed_genome_map,
-                                  max_std, len_oligomer, minD, maxD,
-                                  tmMin, tmMax, hpn_dG_min, homo_dG_min,
-                                  GC_max, verbose))
-        thread.start()
-        alive_threads.append(thread)
+    results = []
+    for work_bundle in work_items:
+        results.append(thread_pool.apply_async(
+                process_find_oligomers, args=(work_bundle, managed_genome_map,
+                                              max_std, len_oligomer, minD,
+                                              maxD, tmMin, tmMax, hpn_dG_min,
+                                              homo_dG_min, GC_max, verbose)))
 
-    for thread in alive_threads:
-        thread.join()
+    for result in results:
+        F_pos_map, R_pos_map = result.get()
+        F_pos_oligomer_map.update(F_pos_map)
+        R_pos_oligomer_map.update(R_pos_map)
 
-    if verbose:
-        print("...Matching oligomers to create primer pairs...")
-    primer_pairs = link_primer_oligomers(
-                                        F_pos_oligomer_map, R_pos_oligomer_map,
-                                        minD=minD, maxD=maxD)
+    thread_pool.close()
+    thread_pool.join()
+
+    F_results = []
+    for pos, oligomers in F_pos_oligomer_map.items():
+        F_results.append((pos, list(oligomers)))
+
+    R_results = []
+    for pos, oligomers in R_pos_oligomer_map.items():
+        R_results.append((pos, list(oligomers)))
+
+    return F_results, R_results
+
+
+def match_oligomers(F_oligomer_results, R_oligomer_results,
+                    minD=900, maxD=1100, threads=4):
+    thread_pool = multiprocessing.Pool(processes=threads)
+    thread_manager = multiprocessing.Manager()
+
+    managed_R_pos_oligomer_map = thread_manager.dict()
+    managed_R_pos_oligomer_map.update(dict(R_oligomer_results))
+
+    chunk_size = math.ceil(math.sqrt(len(F_oligomer_results)))
+    work_chunks = basic.partition_list(F_oligomer_results, chunk_size)
+
+    results = []
+    for work_items in work_chunks:
+        results.append(thread_pool.apply_async(
+            process_match_oligomers, args=(
+                                    work_items, managed_R_pos_oligomer_map,
+                                    minD, maxD)))
+
+    primer_pairs = []
+    for result in results:
+        primer_pairs = primer_pairs + result.get()
+
+    thread_pool.close()
+    thread_pool.join()
+
     return primer_pairs
 
 
 def test_primer_pairs(primer_pairs, genome_map, verbose=False,
                       threads=4, hetero_dG_min=-5000, tm_gap_max=5,
                       Ta_gap_max=5, minD=900, maxD=1100):
+    thread_pool = multiprocessing.Pool(processes=threads)
     thread_manager = multiprocessing.Manager()
-    thread_pool = multiprocessing.Pool(processes=4)
 
     tested_primer_pairs = thread_manager.list()
 
@@ -293,19 +336,24 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
     managed_genome_map = thread_manager.dict()
     managed_genome_map.update(genome_map)
 
-    chunk_size = math.ceil(len(primer_pairs)/threads)
+    chunk_size = math.ceil(math.sqrt(len(primer_pairs)))
     work_chunks = basic.partition_list(primer_pairs, chunk_size)
 
-    for work_chunk in work_chunks:
-        thread_pool.apply_async(process_test_primer_pairs,
-                                (work_chunk, test_primer_pairs, failed_product,
+    results = []
+    for work_items in work_chunks:
+        results.append(thread_pool.apply_async(
+            process_test_primer_pairs, args=(
+                                 work_items, failed_product,
                                  failed_length, failed_thermo,
-                                 managed_genome_map, minD, maxD, tm_gap_max,
-                                 hetero_dG_min, Ta_gap_max))
+                                 managed_genome_map, minD,
+                                 maxD, tm_gap_max, hetero_dG_min, Ta_gap_max)))
+
+    tested_primer_pairs = []
+    for result in results:
+        tested_primer_pairs = tested_primer_pairs + result.get()
 
     thread_pool.close()
     thread_pool.join()
-    thread_pool.terminate()
 
     if verbose:
         print(f"......{failed_product.value} primer "
@@ -321,7 +369,7 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
                                  key=lambda pair: pair.rating,
                                  reverse=True)
 
-    return tested_primer_pairs
+    return list(tested_primer_pairs)
 
 
 def select_primer_pairs(results_map, verbose=False):
@@ -391,98 +439,107 @@ def invert_dictionary(dictionary):
     return new_dict
 
 
-def process_find_primer_pairs(work_queue, F_results, R_results,
-                              work_data_cache, max_std, len_oligomer, minD,
-                              maxD, tmMin, tmMax, hpn_dG_min, homo_dG_min,
-                              GC_max, verbose):
-    while not work_queue.empty():
-        work_bundle = work_queue.get()
-        pham = work_bundle[0]
-        cds_list = work_bundle[1]
+def process_find_oligomers(work_bundle, work_data_cache, max_std, len_oligomer,
+                           minD, maxD, tmMin, tmMax, hpn_dG_min, homo_dG_min,
+                           GC_max, verbose):
+    pham = work_bundle[0]
+    cds_list = work_bundle[1]
 
-        starts = []
-        avg_start = 0
-        for cds in cds_list:
-            starts.append(cds.start)
-            avg_start += cds.start
-        avg_start = int(round(avg_start/len(cds_list), 0))
+    starts = []
+    avg_start = 0
+    for cds in cds_list:
+        starts.append(cds.start)
+        avg_start += cds.start
+    avg_start = int(round(avg_start/len(cds_list), 0))
 
-        start_std = std(starts)
-        if start_std > max_std:
-            if verbose:
-                print(f"...Pham {pham} has unstable synteny")
-            continue
-
-        avg_orientation = 0
-        for cds in cds_list:
-            if cds.orientation == "F":
-                avg_orientation += 1
-        avg_orientation = avg_orientation/len(cds_list)
-        if avg_orientation != 0 and avg_orientation != 1:
-            if verbose:
-                print(f"...Pham {pham} has inconsistent orientation")
-            continue
-
-        cds_to_seq = seq.map_cds_to_seq(None, cds_list,
-                                        data_cache=work_data_cache)
-        conserved_kmer_data = seq.find_conserved_kmers(cds_to_seq,
-                                                       len_oligomer)
-
-        num_conserved_kmers = len(conserved_kmer_data)
-        if num_conserved_kmers == 0:
-            if verbose:
-                print(f"...Pham {pham} has no conserved kmers")
-            continue
-
+    start_std = std(starts)
+    if start_std > max_std:
         if verbose:
-            print(f"...Pham {pham} has {num_conserved_kmers} "
-                  "conserved kmers...")
+            print(f"...Pham {pham} has unstable synteny")
+        return {}, {}
 
-        F_oligomers = get_stable_oligomers(
-                                        conserved_kmer_data, avg_start, "F",
-                                        tmMin=tmMin, tmMax=tmMax,
-                                        hpn_dG_min=hpn_dG_min,
-                                        homo_dG_min=homo_dG_min, GC_max=GC_max)
-        R_oligomers = get_stable_oligomers(
-                                        conserved_kmer_data, avg_start, "R",
-                                        tmMin=tmMin, tmMax=tmMax,
-                                        hpn_dG_min=hpn_dG_min,
-                                        homo_dG_min=homo_dG_min, GC_max=GC_max)
-
-        num_stable_oligomers = len(F_oligomers) + len(R_oligomers)
-
-        if num_stable_oligomers == 0:
-            if verbose:
-                print(f"...Pham {pham} has no stable oligomers")
-            continue
-
+    avg_orientation = 0
+    for cds in cds_list:
+        if cds.orientation == "F":
+            avg_orientation += 1
+    avg_orientation = avg_orientation/len(cds_list)
+    if avg_orientation != 0 and avg_orientation != 1:
         if verbose:
-            print(f"......Pham {pham} has {len(F_oligomers)} "
-                  "stable forward putative primer oligomers.")
-            print(f"......Pham {pham} has {len(R_oligomers)} "
-                  "stable reverse putative primer oligomers.")
+            print(f"...Pham {pham} has inconsistent orientation")
+        return {}, {}
 
-        pham_F_pos_oligomer_map = map_pos_to_oligomer(F_oligomers,
-                                                      verbose=verbose)
-        pham_R_pos_oligomer_map = map_pos_to_oligomer(R_oligomers,
-                                                      verbose=verbose)
+    cds_to_seq = seq.map_cds_to_seq(None, cds_list,
+                                    data_cache=work_data_cache)
+    conserved_kmer_data = seq.find_conserved_kmers(cds_to_seq,
+                                                   len_oligomer)
 
-        F_results.update(pham_F_pos_oligomer_map)
-        R_results.update(pham_R_pos_oligomer_map)
+    num_conserved_kmers = len(conserved_kmer_data)
+    if num_conserved_kmers == 0:
+        if verbose:
+            print(f"...Pham {pham} has no conserved kmers")
+        return {}, {}
+
+    if verbose:
+        print(f"...Pham {pham} has {num_conserved_kmers} "
+              "conserved kmers...")
+
+    F_oligomers = get_stable_oligomers(
+                                    conserved_kmer_data, avg_start, "F",
+                                    tmMin=tmMin, tmMax=tmMax,
+                                    hpn_dG_min=hpn_dG_min,
+                                    homo_dG_min=homo_dG_min,
+                                    GC_max=GC_max)
+    R_oligomers = get_stable_oligomers(
+                                    conserved_kmer_data, avg_start, "R",
+                                    tmMin=tmMin, tmMax=tmMax,
+                                    hpn_dG_min=hpn_dG_min,
+                                    homo_dG_min=homo_dG_min,
+                                    GC_max=GC_max)
+
+    num_stable_oligomers = len(F_oligomers) + len(R_oligomers)
+
+    if num_stable_oligomers == 0:
+        if verbose:
+            print(f"...Pham {pham} has no stable oligomers")
+        return {}, {}
+
+    if verbose:
+        print(f"......Pham {pham} has {len(F_oligomers)} "
+              "stable forward putative primer oligomers.")
+        print(f"......Pham {pham} has {len(R_oligomers)} "
+              "stable reverse putative primer oligomers.")
+
+    pham_F_pos_oligomer_map = map_pos_to_oligomer(F_oligomers,
+                                                  verbose=verbose)
+    pham_R_pos_oligomer_map = map_pos_to_oligomer(R_oligomers,
+                                                  verbose=verbose)
+
+    return pham_F_pos_oligomer_map, pham_R_pos_oligomer_map
 
 
-def process_test_primer_pairs(primer_pairs, tested_primer_pairs,
-                              failed_product, failed_length,
+def process_match_oligomers(work_items, reverse_position_map, minD, maxD):
+    primer_pairs = []
+    for work_bundle in work_items:
+        pos = work_bundle[0]
+        F_oligomers = work_bundle[1]
+
+        for i in range(minD, maxD+1):
+            R_oligomers = reverse_position_map.get(pos+i)
+            if R_oligomers:
+                for F_oligomer in F_oligomers:
+                    for R_oligomer in R_oligomers:
+                        primer_pair = primer3.PrimerPair(
+                                                F_oligomer, R_oligomer)
+                        primer_pairs.append(primer_pair)
+
+    return primer_pairs
+
+
+def process_test_primer_pairs(work_items, failed_product, failed_length,
                               failed_thermo, genome_map, minD, maxD,
                               tm_gap_max, hetero_dG_min, Ta_gap_max):
-    failed_product_count = 0
-    failed_length_count = 0
-    failed_thermo_count = 0
-
-    tested_primer_pairs_storage = []
-
-    for primer_pair in primer_pairs:
-
+    pair_results = []
+    for primer_pair in work_items:
         valid_primers = True
         for genome_id, genome in genome_map.items():
             primer_pair.genome = str(genome.seq)
@@ -492,31 +549,28 @@ def process_test_primer_pairs(primer_pairs, tested_primer_pairs,
 
             except ValueError:
                 valid_primers = False
-                failed_product_count += 1
+                failed_product.value += 1
                 break
 
             product_len = len(primer_pair.product)
             if product_len < minD or product_len > maxD:
                 valid_primers = False
-                failed_length_count += 1
+                failed_length.value += 1
                 break
 
-            valid_primers = ((primer_pair.Tm_gap < tm_gap_max) and
-                             (primer_pair.heterodimer.dg >= hetero_dG_min) and
-                             (primer_pair.annealing_Tm_gap < Ta_gap_max))
+            valid_primers = (
+                    (primer_pair.Tm_gap < tm_gap_max) and
+                    (primer_pair.heterodimer.dg >= hetero_dG_min) and
+                    (primer_pair.annealing_Tm_gap < Ta_gap_max))
 
             if not valid_primers:
-                failed_thermo_count += 1
+                failed_thermo.value += 1
                 break
 
         if valid_primers:
-            tested_primer_pairs_storage.append(primer_pair)
+            pair_results.append(primer_pair)
 
-    failed_product.value += failed_product_count
-    failed_length.value += failed_length_count
-    failed_thermo_count += failed_thermo_count
-
-    tested_primer_pairs = tested_primer_pairs + tested_primer_pairs_storage
+    return pair_results
 
 
 def get_stable_oligomers(conserved_kmer_data, avg_start, orientation,
@@ -554,24 +608,6 @@ def map_pos_to_oligomer(oligomers, verbose=False):
         pos_oligomer_map[oligomer.start] = mapped_oligomers
 
     return pos_oligomer_map
-
-
-def link_primer_oligomers(forward_position_map, reverse_position_map,
-                          minD=900, maxD=1100):
-    primer_pairs = []
-
-    for pos, F_oligomers in forward_position_map.items():
-        for i in range(minD, maxD+1):
-            R_oligomers = reverse_position_map.get(pos+i)
-            if R_oligomers:
-                for F_oligomer in F_oligomers:
-                    for R_oligomer in R_oligomers:
-                        primer_pair = primer3.PrimerPair(
-                                                F_oligomer, R_oligomer)
-                        primer_pairs.append(primer_pair)
-
-    primer_pairs = sorted(primer_pairs, key=lambda pair: pair.start)
-    return primer_pairs
 
 
 # TO RELOCATE
