@@ -319,10 +319,10 @@ def execute_find_primers(alchemist, folder_path=None,
                                          ta_min=ta_min, ta_max=ta_max,
                                          tm_gap_max=tm_gap)
 
-        if primer_pairs:
-            if verbose:
-                print(f"...{len(primer_pairs)} passed primer testing.")
+        if verbose:
+            print(f"...{len(primer_pairs)} passed primer testing.")
 
+        if primer_pairs:
             results_map[mapped_path] = (primer_pairs, genome_map)
 
     if not results_map:
@@ -432,10 +432,6 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
 
     tested_primer_pairs = thread_manager.list()
 
-    failed_product = thread_manager.Value("I", 0)
-    failed_length = thread_manager.Value("I", 0)
-    failed_thermo = thread_manager.Value("I", 0)
-
     managed_genome_map = thread_manager.dict()
     managed_genome_map.update(genome_map)
 
@@ -446,25 +442,26 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
     for work_items in work_chunks:
         results.append(thread_pool.apply_async(
             process_test_primer_pairs, args=(
-                                 work_items, failed_product,
-                                 failed_length, failed_thermo,
-                                 managed_genome_map, minD,
-                                 maxD, tm_gap_max, het_min,
-                                 ta_min, ta_max)))
-
+                                 work_items, managed_genome_map, minD,
+                                 maxD, tm_gap_max, het_min, ta_min, ta_max)))
+    total_run_info = [0] * 3
     tested_primer_pairs = []
     for result in results:
-        tested_primer_pairs = tested_primer_pairs + result.get()
+        pair_results, run_info = result.get()
+
+        tested_primer_pairs = tested_primer_pairs + pair_results
+        for i in range(len(run_info)):
+            total_run_info[i] += run_info[i]
 
     thread_pool.close()
     thread_pool.join()
 
     if verbose:
-        print(f"......{failed_product.value} primer "
+        print(f"......{total_run_info[0]} primer "
               "pairs had an incorrect number of products")
-        print(f"......{failed_length.value} primer pairs "
+        print(f"......{total_run_info[1]} primer pairs "
               "had product lengths outside of the predicted bounds")
-        print(f"......{failed_thermo.value} primer pairs "
+        print(f"......{total_run_info[2]} primer pairs "
               "failed thermodynamic checks")
 
     if verbose:
@@ -647,9 +644,12 @@ def process_match_oligomers(work_items, reverse_position_map, minD, maxD):
     return primer_pairs
 
 
-def process_test_primer_pairs(work_items, failed_product, failed_length,
-                              failed_thermo, genome_map, minD, maxD,
+def process_test_primer_pairs(work_items, genome_map, minD, maxD,
                               tm_gap_max, het_min, ta_min, ta_max):
+    failed_product = 0
+    failed_length = 0
+    failed_thermo = 0
+
     pair_results = []
     for primer_pair in work_items:
         valid_primers = True
@@ -658,16 +658,15 @@ def process_test_primer_pairs(work_items, failed_product, failed_length,
 
             try:
                 primer_pair.set_product()
-
             except ValueError:
                 valid_primers = False
-                failed_product.value += 1
+                failed_product += 1
                 break
 
             product_len = len(primer_pair.product)
             if product_len < minD or product_len > maxD:
                 valid_primers = False
-                failed_length.value += 1
+                failed_length += 1
                 break
 
             valid_primers = (
@@ -677,13 +676,13 @@ def process_test_primer_pairs(work_items, failed_product, failed_length,
                     (primer_pair.annealing_ta < ta_max))
 
             if not valid_primers:
-                failed_thermo.value += 1
+                failed_thermo += 1
                 break
 
         if valid_primers:
             pair_results.append(primer_pair)
 
-    return pair_results
+    return (pair_results, (failed_product, failed_length, failed_thermo))
 
 
 def get_stable_oligomers(conserved_kmer_data, avg_start, orientation,

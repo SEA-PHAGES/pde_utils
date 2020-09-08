@@ -39,6 +39,7 @@ class Heterodimer:
         self.structure_lines = thermo.ascii_structure_lines
 
         self._formatted_structure_lines = None
+        self._formatted_structure = None
         self._reduced_structure = None
 
     @property
@@ -46,39 +47,19 @@ class Heterodimer:
         return self.get_formatted_structure_lines()
 
     @property
+    def formatted_structure(self):
+        return self.get_formatted_structure()
+
+    @property
     def reduced_structure(self):
         return self.get_reduced_structure()
 
     def set_formatted_structure_lines(self):
         if not self.structure_lines:
-            return None
-        if len(self.structure_lines[0]) <= 4:
-            return None
+            return
 
-        nucleotides = ["A", "T", "G", "C"]
-
-        oligomer_chars = [char for char in self.structure_lines[0][4:]]
-        oligomer_match_chars = [char for char in self.structure_lines[1][4:]]
-        target_match_chars = [char for char in self.structure_lines[2][4:]]
-        target_chars = [char for char in self.structure_lines[3][4:]]
-
-        combined_match_chars = []
-
-        for i in range(len(oligomer_match_chars)):
-            if oligomer_match_chars[i] in nucleotides:
-                oligomer_chars[i] = oligomer_match_chars[i]
-                target_chars[i] = target_match_chars[i]
-
-                combined_match_chars.append("|")
-            else:
-                combined_match_chars.append(" ")
-
-        oligomer_line = "".join(oligomer_chars)
-        match_line = "".join(combined_match_chars)
-        target_line = "".join(target_chars)
-
-        self._formatted_sturcture_lines = [oligomer_line, match_line,
-                                           target_line]
+        self._formatted_structure_lines = format_primer3_match_structure_lines(
+                                                self.structure_lines)
 
     def get_formatted_structure_lines(self):
         if self._formatted_structure_lines is None:
@@ -86,28 +67,42 @@ class Heterodimer:
 
         return self._formatted_structure_lines
 
+    def set_formatted_structure(self):
+        formatted_structure_lines = self.get_formatted_structure_lines()
+
+        self._formatted_structure = (
+                    f"5'   {formatted_structure_lines[0]}   3'\n"
+                    f"     {formatted_structure_lines[1]}\n"
+                    f"3'   {formatted_structure_lines[2]}   5'\n")
+
+    def get_formatted_structure(self):
+        if self._formatted_structure is None:
+            self.set_formatted_structure()
+
+        return self._formatted_structure
+
     def set_reduced_structure(self):
         formatted_structure_lines = self.get_formatted_structure_lines()
         if formatted_structure_lines is None:
-            return None
+            return
 
         nucleotides = ["A", "T", "G", "C"]
 
         match_start = None
         for i in range(len(formatted_structure_lines[0])):
-            if formatted_structure_lines[i] in nucleotides:
+            if formatted_structure_lines[0][i] in nucleotides:
                 match_start = i
                 break
 
         if match_start is None:
-            return match_start
+            return
 
         len_oligomer = len(self.oligomer)
         nucleotide_counter = 1
 
         match_end = None
         for i in range(len(formatted_structure_lines[0])):
-            if formatted_structure_lines[i] in nucleotides:
+            if formatted_structure_lines[0][i] in nucleotides:
                 nucleotide_counter += 1
 
             if nucleotide_counter == len_oligomer:
@@ -115,16 +110,16 @@ class Heterodimer:
                 break
 
         if match_end is None:
-            return match_end
+            return
 
         oligomer_line = formatted_structure_lines[0][match_start:match_end]
         match_line = formatted_structure_lines[1][match_start:match_end]
         target_line = formatted_structure_lines[2][match_start:match_end]
 
         self._reduced_structure = (
-                    f"5' {oligomer_line} 3'\n   {match_line}   \n"
-                    f"3' {target_line} 5'\n"
-                    "...{match_start+1}..{match_end}...\n")
+                    f"5'   {oligomer_line}   3'\n     {match_line}     \n"
+                    f"3' ..{target_line}.. 5'\n"
+                    f"Dimer position: ...~{match_start+1}..~{match_end}...\n")
 
     def get_reduced_structure(self):
         if self._reduced_structure is None:
@@ -147,6 +142,44 @@ class Homodimer:
         self.structure = thermo.ascii_structure
         self.structure_lines = thermo.ascii_structure_lines
 
+        self._formatted_structure_lines = None
+        self._formatted_structure = None
+
+    @property
+    def formatted_structure_lines(self):
+        return self.get_formatted_structure_lines()
+
+    @property
+    def formatted_structure(self):
+        return self.get_formatted_structure()
+
+    def set_formatted_structure_lines(self):
+        if not self.structure_lines:
+            return
+
+        self._formatted_structure_lines = format_primer3_match_structure_lines(
+                                                self.structure_lines)
+
+    def get_formatted_structure_lines(self):
+        if self._formatted_structure_lines is None:
+            self.set_formatted_structure_lines()
+
+        return self._formatted_structure_lines
+
+    def set_formatted_structure(self):
+        formatted_structure_lines = self.get_formatted_structure_lines()
+
+        self._formatted_structure = (
+                    f"5'   {formatted_structure_lines[0]}   3'\n"
+                    f"     {formatted_structure_lines[1]}\n"
+                    f"3'   {formatted_structure_lines[2]}   5'\n")
+
+    def get_formatted_structure(self):
+        if self._formatted_structure is None:
+            self.set_formatted_structure()
+
+        return self._formatted_structure
+
 
 class Hairpin:
     def __init__(self, oligomer):
@@ -165,10 +198,12 @@ class Hairpin:
 
 class Oligomer:
     def __init__(self, oligomer, start=None, max_runs=4):
-        base_runs_format = re.compile("".join(["A{", str(max_runs), "}|"]) +
+        base_runs_format = re.compile("\w*(" +
+                                      "".join(["A{", str(max_runs), "}|"]) +
                                       "".join(["T{", str(max_runs), "}|"]) +
                                       "".join(["G{", str(max_runs), "}|"]) +
-                                      "".join(["C{", str(max_runs), "}"]))
+                                      "".join(["C{", str(max_runs), "}"]) +
+                                      ")\w*")
 
         self.seq = oligomer
 
@@ -465,3 +500,35 @@ class PrimerPair:
                         / 10**(-5000/-1400))
 
         return rating
+
+
+def format_primer3_match_structure_lines(structure_lines):
+    for i in range(len(structure_lines)):
+        structure_lines[i] = structure_lines[i].replace("\t", " ")
+    if len(structure_lines[0]) <= 4:
+        return
+
+    nucleotides = ["A", "T", "G", "C"]
+
+    oligomer_chars = [char for char in structure_lines[0][4:]]
+    oligomer_match_chars = [char for char in structure_lines[1][4:]]
+    target_match_chars = [char for char in structure_lines[2][4:]]
+    target_chars = [char for char in structure_lines[3][4:]]
+
+    combined_match_chars = []
+
+    for i in range(len(oligomer_match_chars)):
+        if oligomer_match_chars[i] in nucleotides:
+            oligomer_chars[i] = oligomer_match_chars[i]
+            target_chars[i] = target_match_chars[i]
+
+            combined_match_chars.append("|")
+        else:
+            combined_match_chars.append(" ")
+
+    oligomer_line = "".join(oligomer_chars)
+    match_line = "".join(combined_match_chars)
+    target_line = "".join(target_chars)
+
+    formatted_structure_lines = [oligomer_line, match_line, target_line]
+    return formatted_structure_lines
