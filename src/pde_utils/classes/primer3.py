@@ -362,9 +362,9 @@ class PrimerPair:
         matches = re.findall(product_format, self._genome)
 
         if len(matches) == 0:
-            raise ValueError("PCR product cannot be found in genome.")
+            raise NoProductError("PCR product cannot be found in genome.")
         if len(matches) > 1:
-            raise ValueError("Given primers have multiple products.")
+            raise MultipleProductError("Given primers have multiple products.")
 
         product = matches[0]
         self._product = product
@@ -532,3 +532,11 @@ def format_primer3_match_structure_lines(structure_lines):
 
     formatted_structure_lines = [oligomer_line, match_line, target_line]
     return formatted_structure_lines
+
+
+class NoProductError(Exception):
+    pass
+
+
+class MultipleProductError(Exception):
+    pass

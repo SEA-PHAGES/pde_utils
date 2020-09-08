@@ -17,6 +17,7 @@ def map_cds_to_seq(alchemist, cds_list, mol_type="dna", data_cache=None):
                                             alchemist, cds.genome_id,
                                             data_cache=data_cache)
 
+            cds.genome_length = parent_genome.length
             cds.set_seqfeature()
             cds.set_nucleotide_sequence(
                                 parent_genome_seq=parent_genome.seq)

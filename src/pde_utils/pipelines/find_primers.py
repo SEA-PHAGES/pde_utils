@@ -245,7 +245,7 @@ def execute_find_primers(alchemist, folder_path=None,
                          minD=900, maxD=1100, tm_min=52.0, tm_max=58.0,
                          hpn_min=-2000, ho_min=-5000, GC_max=60.0,
                          het_min=-5000, tm_gap=5.0, ta_min=48.0,
-                         ta_max=68.0, mode=0):
+                         ta_max=68.0, mode=0, full_genome=False):
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
     working_path = pipelines_basic.create_working_path(
@@ -279,12 +279,22 @@ def execute_find_primers(alchemist, folder_path=None,
             export_db.get_single_genome(alchemist, genome_id,
                                         data_cache=genome_map)
 
-        pham_gene_map = build_pham_gene_map(db_filter, conditionals,
-                                            verbose=verbose)
-
         if verbose:
             print(f"...Identifying primer pairs for '{mapped_path}'...")
-        F_results, R_results = find_oligomers(
+
+        if full_genome:
+            F_results, R_results = find_full_genome_oligomers(
+                                    genome_map,
+                                    verbose=verbose, threads=threads, prc=prc,
+                                    max_std=max_std, minD=minD, maxD=maxD,
+                                    len_oligomer=len_oligomer, tm_min=tm_min,
+                                    tm_max=tm_max, hpn_min=hpn_min,
+                                    ho_min=ho_min, GC_max=GC_max)
+        else:
+            pham_gene_map = build_pham_gene_map(db_filter, conditionals,
+                                                verbose=verbose)
+
+            F_results, R_results = find_oligomers(
                                     alchemist, pham_gene_map, genome_map,
                                     verbose=verbose, threads=threads, prc=prc,
                                     max_std=max_std, minD=minD, maxD=maxD,
@@ -396,6 +406,50 @@ def find_oligomers(alchemist, pham_gene_map, genome_map,
     return F_results, R_results
 
 
+def find_full_genome_oligomers(
+                   genome_map, verbose=False, threads=4, prc=0.8, max_std=3000,
+                   len_oligomer=20, minD=900, maxD=1100, tm_min=52, tm_max=58,
+                   hpn_min=-2000, ho_min=-5000, GC_max=60):
+    thread_pool = multiprocessing.Pool(processes=threads)
+    thread_manager = multiprocessing.Manager()
+
+    managed_genome_map = thread_manager.dict()
+    managed_genome_map.update(genome_map)
+
+    work_items = []
+    F_pos_oligomer_map = {}
+    R_pos_oligomer_map = {}
+
+    work_items.append([])
+
+    results = []
+    for work_bundle in work_items:
+        results.append(thread_pool.apply_async(
+                process_find_oligomers, args=(work_bundle, managed_genome_map,
+                                              max_std, len_oligomer, minD,
+                                              maxD, tm_min, tm_max, hpn_min,
+                                              ho_min, GC_max, verbose)))
+
+    for result in results:
+        F_pos_map, R_pos_map = result.get()
+        F_pos_oligomer_map.update(F_pos_map)
+        R_pos_oligomer_map.update(R_pos_map)
+
+    thread_pool.close()
+    thread_pool.join()
+
+    F_results = []
+    for pos, oligomers in F_pos_oligomer_map.items():
+        F_results.append((pos, list(oligomers)))
+
+    R_results = []
+    for pos, oligomers in R_pos_oligomer_map.items():
+        R_results.append((pos, list(oligomers)))
+
+    return F_results, R_results
+    pass
+
+
 def match_oligomers(F_oligomer_results, R_oligomer_results,
                     minD=900, maxD=1100, threads=4):
     thread_pool = multiprocessing.Pool(processes=threads)
@@ -444,7 +498,7 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
             process_test_primer_pairs, args=(
                                  work_items, managed_genome_map, minD,
                                  maxD, tm_gap_max, het_min, ta_min, ta_max)))
-    total_run_info = [0] * 3
+    total_run_info = [0] * 4
     tested_primer_pairs = []
     for result in results:
         pair_results, run_info = result.get()
@@ -458,10 +512,12 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
 
     if verbose:
         print(f"......{total_run_info[0]} primer "
-              "pairs had an incorrect number of products")
-        print(f"......{total_run_info[1]} primer pairs "
-              "had product lengths outside of the predicted bounds")
+              "pairs formed no products on at least one genome")
+        print(f"......{total_run_info[1]} primer "
+              "pairs formed multiple products on at least one genome")
         print(f"......{total_run_info[2]} primer pairs "
+              "formed product with incorrect lengths on at least one genome")
+        print(f"......{total_run_info[3]} primer pairs "
               "failed thermodynamic checks")
 
     if verbose:
@@ -646,7 +702,8 @@ def process_match_oligomers(work_items, reverse_position_map, minD, maxD):
 
 def process_test_primer_pairs(work_items, genome_map, minD, maxD,
                               tm_gap_max, het_min, ta_min, ta_max):
-    failed_product = 0
+    failed_no_product = 0
+    failed_many_product = 0
     failed_length = 0
     failed_thermo = 0
 
@@ -658,10 +715,13 @@ def process_test_primer_pairs(work_items, genome_map, minD, maxD,
 
             try:
                 primer_pair.set_product()
-            except ValueError:
+            except primer3.NoProductError:
                 valid_primers = False
-                failed_product += 1
+                failed_no_product += 1
                 break
+            except primer3.MultipleProductError:
+                valid_primers = False
+                failed_many_product += 1
 
             product_len = len(primer_pair.product)
             if product_len < minD or product_len > maxD:
@@ -682,7 +742,8 @@ def process_test_primer_pairs(work_items, genome_map, minD, maxD,
         if valid_primers:
             pair_results.append(primer_pair)
 
-    return (pair_results, (failed_product, failed_length, failed_thermo))
+    return (pair_results, (failed_no_product, failed_many_product,
+                           failed_length, failed_thermo))
 
 
 def get_stable_oligomers(conserved_kmer_data, avg_start, orientation,

@@ -2,6 +2,7 @@ import math
 import random
 
 import mmh3
+
 from bitarray import bitarray
 
 RANDOM_MAX = 4294967290
@@ -88,13 +89,13 @@ class CountMinSketch(BloomFilter):
             self.hash_count = hash_count
         self.set_salts()
 
-        self.numarray = [0] * self.size
+        self.bytearray = bytearray([0] * self.size)
 
     def check(self, item):
         count = None
         for salt in self.salts:
             digest = mmh3.hash(item, salt) % self.size
-            curr_bucket = self.numarray[digest]
+            curr_bucket = self.bytearray[digest]
 
             if count is None:
                 count = curr_bucket
@@ -106,4 +107,4 @@ class CountMinSketch(BloomFilter):
     def add(self, item):
         for salt in self.salts:
             digest = mmh3.hash(item, salt) % self.size
-            self.numarray[digest] += 1
+            self.bytearray[digest] += 1
