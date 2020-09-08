@@ -11,7 +11,6 @@ import math
 from pathlib import Path
 
 from Bio.Seq import Seq
-from numpy import std
 from pdm_utils.functions import annotation
 from pdm_utils.functions import basic
 from pdm_utils.functions import configfile
@@ -175,6 +174,11 @@ def parse_find_primers(unparsed_args):
         temperature threshold of a any pair of given primers.
             Follow parameter argument with the desired temperature in Celsius.
         """
+    START_DEVIATION_NET_HELP = """
+        Find primer parameter option that expands the prefiltered search radius
+        during primer matching steps
+            Follow parameter argument with the desired net length in base pairs
+        """
 
     parser = argparse.ArgumentParser()
 
@@ -213,7 +217,7 @@ def parse_find_primers(unparsed_args):
     parser.add_argument("-het_min", type=int,
                         help=HETERODIMER_GIBBS_FREE_ENERGY_MINIMUM_HELP)
     parser.add_argument("-GC", type=float, help=MAXIMUM_GC_CONTENT_HELP)
-    parser.add_argument("-max_std")
+    parser.add_argument("-dev_net", type=int, help=START_DEVIATION_NET_HELP)
     parser.add_argument("-len", "--oligomer_length", type=int,
                         help=OLIGOMER_LENGTH_HELP)
     parser.add_argument("-tm_min", type=float,
@@ -231,7 +235,7 @@ def parse_find_primers(unparsed_args):
                         config_file=None, verbose=False, input=[], threads=1,
                         filters="", groups=[], prc=0.70, minD=900, maxD=1100,
                         hpn_min=-2000, ho_min=-5000, het_min=-5000, GC=60.0,
-                        oligomer_length=20, tm_min=52.0, tm_max=58,
+                        oligomer_length=20, tm_min=52.0, tm_max=58, dev_net=0,
                         tm_gap=5.0, ta_min=48.0, ta_max=68.0, mode=0)
 
     parsed_args = parser.parse_args(unparsed_args[2:])
@@ -241,7 +245,7 @@ def parse_find_primers(unparsed_args):
 def execute_find_primers(alchemist, folder_path=None,
                          folder_name=DEFAULT_FOLDER_NAME, values=None,
                          filters="", groups=[], verbose=False,
-                         threads=4, prc=0.7, max_std=3000, len_oligomer=20,
+                         threads=4, prc=0.7, dev_net=0, len_oligomer=20,
                          minD=900, maxD=1100, tm_min=52.0, tm_max=58.0,
                          hpn_min=-2000, ho_min=-5000, GC_max=60.0,
                          het_min=-5000, tm_gap=5.0, ta_min=48.0,
@@ -286,7 +290,7 @@ def execute_find_primers(alchemist, folder_path=None,
             F_results, R_results = find_full_genome_oligomers(
                                     genome_map,
                                     verbose=verbose, threads=threads, prc=prc,
-                                    max_std=max_std, minD=minD, maxD=maxD,
+                                    minD=minD, maxD=maxD,
                                     len_oligomer=len_oligomer, tm_min=tm_min,
                                     tm_max=tm_max, hpn_min=hpn_min,
                                     ho_min=ho_min, GC_max=GC_max)
@@ -297,7 +301,7 @@ def execute_find_primers(alchemist, folder_path=None,
             F_results, R_results = find_oligomers(
                                     alchemist, pham_gene_map, genome_map,
                                     verbose=verbose, threads=threads, prc=prc,
-                                    max_std=max_std, minD=minD, maxD=maxD,
+                                    minD=minD, maxD=maxD,
                                     len_oligomer=len_oligomer, tm_min=tm_min,
                                     tm_max=tm_max, hpn_min=hpn_min,
                                     ho_min=ho_min, GC_max=GC_max)
@@ -311,7 +315,8 @@ def execute_find_primers(alchemist, folder_path=None,
             print("...Matching oligomers to create primer pairs...")
 
         primer_pairs = match_oligomers(F_results, R_results,
-                                       minD=minD, maxD=maxD, threads=threads)
+                                       minD=minD, maxD=maxD, dev_net=dev_net,
+                                       threads=threads)
 
         if not primer_pairs:
             print(f"No valid primer pairs found for '{mapped_path}' with "
@@ -347,7 +352,7 @@ def execute_find_primers(alchemist, folder_path=None,
 
 
 def find_oligomers(alchemist, pham_gene_map, genome_map,
-                   verbose=False, threads=4, prc=0.8, max_std=3000,
+                   verbose=False, threads=4, prc=0.8,
                    len_oligomer=20, minD=900, maxD=1100, tm_min=52, tm_max=58,
                    hpn_min=-2000, ho_min=-5000, GC_max=60):
     pham_histogram = {}
@@ -383,7 +388,7 @@ def find_oligomers(alchemist, pham_gene_map, genome_map,
     for work_bundle in work_items:
         results.append(thread_pool.apply_async(
                 process_find_oligomers, args=(work_bundle, managed_genome_map,
-                                              max_std, len_oligomer, minD,
+                                              len_oligomer, minD,
                                               maxD, tm_min, tm_max, hpn_min,
                                               ho_min, GC_max, verbose)))
 
@@ -407,9 +412,11 @@ def find_oligomers(alchemist, pham_gene_map, genome_map,
 
 
 def find_full_genome_oligomers(
-                   genome_map, verbose=False, threads=4, prc=0.8, max_std=3000,
+                   genome_map, verbose=False, threads=4, prc=0.8,
                    len_oligomer=20, minD=900, maxD=1100, tm_min=52, tm_max=58,
                    hpn_min=-2000, ho_min=-5000, GC_max=60):
+    raise NotImplementedError(
+                    "Full genome oligomer search is not yet supported")
     thread_pool = multiprocessing.Pool(processes=threads)
     thread_manager = multiprocessing.Manager()
 
@@ -426,7 +433,7 @@ def find_full_genome_oligomers(
     for work_bundle in work_items:
         results.append(thread_pool.apply_async(
                 process_find_oligomers, args=(work_bundle, managed_genome_map,
-                                              max_std, len_oligomer, minD,
+                                              len_oligomer, minD,
                                               maxD, tm_min, tm_max, hpn_min,
                                               ho_min, GC_max, verbose)))
 
@@ -451,7 +458,7 @@ def find_full_genome_oligomers(
 
 
 def match_oligomers(F_oligomer_results, R_oligomer_results,
-                    minD=900, maxD=1100, threads=4):
+                    minD=900, maxD=1100, dev_net=0, threads=4):
     thread_pool = multiprocessing.Pool(processes=threads)
     thread_manager = multiprocessing.Manager()
 
@@ -466,7 +473,7 @@ def match_oligomers(F_oligomer_results, R_oligomer_results,
         results.append(thread_pool.apply_async(
             process_match_oligomers, args=(
                                     work_items, managed_R_pos_oligomer_map,
-                                    minD, maxD)))
+                                    minD, maxD, dev_net)))
 
     primer_pairs = []
     for result in results:
@@ -604,7 +611,7 @@ def invert_dictionary(dictionary):
     return new_dict
 
 
-def process_find_oligomers(work_bundle, work_data_cache, max_std, len_oligomer,
+def process_find_oligomers(work_bundle, work_data_cache, len_oligomer,
                            minD, maxD, tm_min, tm_max, hpn_min, ho_min,
                            GC_max, verbose):
     pham = work_bundle[0]
@@ -616,12 +623,6 @@ def process_find_oligomers(work_bundle, work_data_cache, max_std, len_oligomer,
         starts.append(cds.start)
         avg_start += cds.start
     avg_start = int(round(avg_start/len(cds_list), 0))
-
-    start_std = std(starts)
-    if start_std > max_std:
-        if verbose:
-            print(f"...Pham {pham} has unstable synteny")
-        return {}, {}
 
     avg_orientation = 0
     for cds in cds_list:
@@ -682,13 +683,14 @@ def process_find_oligomers(work_bundle, work_data_cache, max_std, len_oligomer,
     return pham_F_pos_oligomer_map, pham_R_pos_oligomer_map
 
 
-def process_match_oligomers(work_items, reverse_position_map, minD, maxD):
+def process_match_oligomers(work_items, reverse_position_map, minD, maxD,
+                            dev_net):
     primer_pairs = []
     for work_bundle in work_items:
         pos = work_bundle[0]
         F_oligomers = work_bundle[1]
 
-        for i in range(minD, maxD+1):
+        for i in range((minD-dev_net), (maxD+1+dev_net)):
             R_oligomers = reverse_position_map.get(pos+i)
             if R_oligomers:
                 for F_oligomer in F_oligomers:
