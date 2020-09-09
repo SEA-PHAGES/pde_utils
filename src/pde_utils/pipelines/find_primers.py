@@ -6,6 +6,7 @@
 import argparse
 import heapq
 import multiprocessing
+import pickle
 import sys
 import time
 import math
@@ -24,6 +25,9 @@ from pde_utils.functions import seq
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
+TEMP_DIR = Path("/tmp/pde_utils_find_primers_cache")
+PICKLED_FILE_NAME = "PICKLED_PRIMERS"
+
 DEFAULT_FOLDER_NAME = (f"{time.strftime('%Y%m%d')}_find_primers")
 
 PHAGE_QUERY = "SELECT * FROM phage"
@@ -56,7 +60,7 @@ def main(unparsed_args):
                          len_oligomer=args.oligomer_length, tm_min=args.tm_min,
                          tm_max=args.tm_max, tm_gap=args.tm_gap,
                          ta_min=args.ta_min, ta_max=args.ta_max,
-                         mode=args.mode)
+                         mode=args.mode, soft_cap=args.soft_cap)
 
 
 def parse_find_primers(unparsed_args):
@@ -187,6 +191,10 @@ def parse_find_primers(unparsed_args):
         during primer matching steps
             Follow parameter argument with the desired net length in base pairs
         """
+    SOFT_CAP_HELP = """Find primer parameter option that restricts the amount
+        of primer pairs to be evaluated after testing, to limit memory usage
+            Follow parameter argument with the desired number of pairs
+        """
 
     parser = argparse.ArgumentParser()
 
@@ -213,7 +221,7 @@ def parse_find_primers(unparsed_args):
     parser.add_argument("-g", "--group_by", nargs="*", dest="groups",
                         help=GROUP_BY_HELP)
 
-    parser.add_argument("-mo", help=MODE_HELP)
+    parser.add_argument("-mo", "--mode", type=int, help=MODE_HELP)
     parser.add_argument("-prc", type=float,
                         help=PHAM_REPRESENTATION_CUTOFF_HELP)
     parser.add_argument("-minD", type=int, help=MINIMUM_PRODUCT_LENGTH_HELP)
@@ -238,13 +246,15 @@ def parse_find_primers(unparsed_args):
                         help=MAXIMUM_OPTIMAL_ANNEALING_TEMPERATURE_HELP)
     parser.add_argument("-ta_max", type=float,
                         help=MINIMUM_OPTIMAL_ANNEALING_TEMPERATURE_HELP)
+    parser.add_argument("-sc", "--soft_cap", type=int, help=SOFT_CAP_HELP)
 
     parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME, folder_path=None,
                         config_file=None, verbose=False, input=[], threads=1,
                         filters="", groups=[], prc=0.70, minD=900, maxD=1100,
                         hpn_min=-2000, ho_min=-5000, het_min=-5000, GC=60.0,
                         oligomer_length=20, tm_min=52.0, tm_max=58, dev_net=0,
-                        tm_gap=5.0, ta_min=48.0, ta_max=68.0, mode=0)
+                        tm_gap=5.0, ta_min=48.0, ta_max=68.0, mode=0,
+                        soft_cap=None)
 
     parsed_args = parser.parse_args(unparsed_args[2:])
     return parsed_args
@@ -257,7 +267,8 @@ def execute_find_primers(alchemist, folder_path=None,
                          minD=900, maxD=1100, tm_min=52.0, tm_max=58.0,
                          hpn_min=-2000, ho_min=-5000, GC_max=60.0,
                          het_min=-5000, tm_gap=5.0, ta_min=48.0,
-                         ta_max=68.0, mode=0, full_genome=False):
+                         ta_max=68.0, mode=0, full_genome=False,
+                         soft_cap=None):
     """Executes the entirety of the file export pipeline.
 
     :param alchemist: A connected and fully build AlchemyHandler object.
@@ -306,6 +317,8 @@ def execute_find_primers(alchemist, folder_path=None,
     :type ta_max: float
     :param mode: Run mode for find primers analysis
     :type mode: int
+    :param soft_cap: Cap limit on number of pairs evaluated after testing
+    :type soft_cap: int
     """
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
@@ -316,13 +329,19 @@ def execute_find_primers(alchemist, folder_path=None,
                                                     db_filter, working_path,
                                                     groups=groups,
                                                     verbose=verbose)
-    results_map = {}
 
     if verbose:
         print("Prepared query and path structure, beginning primer search...")
 
+    if not TEMP_DIR.is_dir():
+        TEMP_DIR.mkdir()
+    pickled_results_file = TEMP_DIR.joinpath(PICKLED_FILE_NAME)
+    if pickled_results_file.is_file():
+        pickled_results_file.unlink()
+
     values = db_filter.values
     for mapped_path in conditionals_map.keys():
+        results_map = {}
         db_filter.reset()
         db_filter.key = "phage"
         db_filter.values = values
@@ -394,13 +413,28 @@ def execute_find_primers(alchemist, folder_path=None,
         if verbose:
             print(f"...{len(primer_pairs)} passed primer testing.")
 
+        if soft_cap is not None:
+            if len(primer_pairs) > soft_cap:
+                primer_pairs = primer_pairs[:soft_cap]
+
+        if pickled_results_file.is_file():
+            with pickled_results_file.open(mode="rb") as filehandle:
+                results_map = pickle.load(filehandle)
+
         if primer_pairs:
             results_map[mapped_path] = (primer_pairs, genome_map)
+
+        with pickled_results_file.open(mode="wb") as filehandle:
+            pickle.dump(results_map, filehandle)
+
+    if pickled_results_file.is_file():
+        pickled_results_file.unlink()
 
     if not results_map:
         print("No primer pairs found with current parameters...")
 
-    results_map = select_primer_pairs(results_map, verbose=verbose, mode=mode)
+    results_map = select_primer_pairs(results_map, verbose=verbose, mode=mode,
+                                      het_min=het_min)
 
     for mapped_path, primer_pairs in results_map.items():
         pipelines_basic.create_working_dir(mapped_path)
@@ -596,7 +630,7 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
     for result in results:
         pair_results, run_info = result.get()
 
-        tested_primer_pairs.append(pair_results)
+        tested_primer_pairs = tested_primer_pairs + pair_results
         for i in range(len(run_info)):
             total_run_info[i] += run_info[i]
 
@@ -620,53 +654,80 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
     return list(tested_primer_pairs)
 
 
-def select_primer_pairs(results_map, verbose=False, mode=0):
-    selected_results_map = {}
-
+def select_primer_pairs(results_map, verbose=False, mode=0, het_min=-5000):
     if mode == 0:
         return results_map
 
-    if mode >= 1:
-        for mapped_path, data in results_map.items():
-            if verbose:
-                print(f"Selecting primers for '{mapped_path}'...")
+    if mode >= 0:
+        working_map = results_map
+        primer_solution = False
+        while not primer_solution:
+            if mode >= 1:
+                temp_map = {}
+                for mapped_path, data in working_map.items():
+                    if verbose:
+                        print(f"Selecting primers for '{mapped_path}'...")
 
-            valid_primer_num = None
-            for i in range(len(data[0])):
-                primer_pair = data[0][i]
+                    valid_primer_num = None
+                    for i in range(len(data[0])):
+                        primer_pair = data[0][i]
 
-                valid_pair = True
-                for inner_mapped_path, inner_data in results_map.items():
-                    if mapped_path == mapped_path:
-                        continue
+                        valid_pair = True
+                        for i_mapped_path, i_data in working_map.items():
+                            if mapped_path == mapped_path:
+                                continue
 
-                    for genome_id, genome in inner_data[1]:
-                        try:
-                            primer_pair.genome = str(genome.seq)
-                            primer_pair.product
-                            valid_pair = False
-                        except ValueError:
-                            pass
+                            for genome_id, genome in i_data[1]:
+                                try:
+                                    primer_pair.genome = str(genome.seq)
+                                    primer_pair.product
+                                    valid_pair = False
+                                except ValueError:
+                                    pass
 
-                    if not valid_pair:
+                            if not valid_pair:
+                                break
+
+                        if valid_pair:
+                            valid_primer_num = i
+                            break
+
+                    if valid_primer_num is not None:
+                        temp_map[mapped_path] = (data[0][valid_primer_num:],
+                                                 data[1])
+                    else:
+                        print(f"All primer pairs for '{mapped_path}' generate "
+                              "products with other nucleotide reagents")
+                        sys.exit(1)
+
+            working_map = temp_map
+            primer_solution = True
+            if mode >= 2:
+                for mapped_path, data in working_map.items():
+                    curr_primer = data[0][0]
+
+                    for i_mapped_path, i_data in working_map.items():
+                        if mapped_path == i_mapped_path:
+                            continue
+
+                        i_primer = data[0][0]
+
+                        for curr_oligo in [curr_primer.fwd, curr_primer.rvs]:
+                            for i_oligo in [i_primer.fwd, i_primer.rvs]:
+                                primer_dimer = primer3.Heterodimer(
+                                            curr_oligo.seq, i_oligo.seq)
+
+                                if primer_dimer.dg < het_min:
+                                    primer_solution = False
+                                    break
+
+                            if not primer_solution:
+                                break
+
+                    if not primer_solution:
                         break
 
-                if valid_pair:
-                    valid_primer_num = i
-                    break
-
-            if valid_primer_num is not None:
-                selected_results_map[mapped_path] = (
-                                                data[0][valid_primer_num:],)
-            else:
-                print(f"All primer pairs for '{mapped_path}' generate "
-                      "products against non-grouped genomes")
-                sys.exit(1)
-
-    if mode >= 2:
-        pass
-
-    return selected_results_map
+        return working_map
 
 
 # TO FIX IN BASIC
@@ -829,7 +890,7 @@ def process_test_primer_pairs(work_items, genome_map, minD, maxD,
             pair_results.append(primer_pair)
 
     pair_results = sorted(pair_results, key=lambda pair: pair.rating,
-                          reverse=False)
+                          reverse=True)
 
     return (pair_results, (failed_no_product, failed_many_product,
                            failed_length, failed_thermo))
