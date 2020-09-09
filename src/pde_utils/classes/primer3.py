@@ -1,3 +1,5 @@
+"""Collection of objects designed to replace/wrap results given by the primer3
+and primer3-py libraries"""
 import re
 
 from Bio import SeqUtils
@@ -7,9 +9,9 @@ from primer3 import (
 from primer3.bindings import calcEndStability
 
 
-# GLOBAL VARIABLES
-# -----------------------------------------------------------------------------
 class Clamp:
+    """Class to hold data about the 3' end stability of a primer to its product
+    """
     def __init__(self, oligomer, target):
         self.oligomer = oligomer
         self.target = target
@@ -23,6 +25,9 @@ class Clamp:
 
 
 class Heterodimer:
+    """Class to hold data about the dimerization between two nucleic acid
+    sequences
+    """
     def __init__(self, oligomer, target):
         self.oligomer = oligomer
         self.target = target
@@ -35,9 +40,11 @@ class Heterodimer:
         self.dh = thermo.dh
         self.ds = thermo.ds
 
+        # Structure and structure lines are given in the primer3 format
         self.structure = thermo.ascii_structure
         self.structure_lines = thermo.ascii_structure_lines
 
+        # Intended for use by getters, setters, and 'magic' properties
         self._formatted_structure_lines = None
         self._formatted_structure = None
         self._reduced_structure = None
@@ -55,6 +62,7 @@ class Heterodimer:
         return self.get_reduced_structure()
 
     def set_formatted_structure_lines(self):
+        """Attempts to set the newline split Heterodimer formatted structure"""
         if not self.structure_lines:
             return
 
@@ -62,12 +70,19 @@ class Heterodimer:
                                                 self.structure_lines)
 
     def get_formatted_structure_lines(self):
+        """Attempts to (set and) return the newline split
+           Heterodimer formatted structure
+
+        :returns: String lines with a pipe-based match representation
+        :rtype: list
+        """
         if self._formatted_structure_lines is None:
             self.set_formatted_structure_lines()
 
         return self._formatted_structure_lines
 
     def set_formatted_structure(self):
+        """Attempts to set the Heterodimer formatted structure"""
         formatted_structure_lines = self.get_formatted_structure_lines()
 
         self._formatted_structure = (
@@ -76,18 +91,25 @@ class Heterodimer:
                     f"3'   {formatted_structure_lines[2]}   5'\n")
 
     def get_formatted_structure(self):
+        """Attempts to (set and) return the Heterodimer formatted structure
+
+        :returns: String with a pipe-base match representation
+        :rtype: str
+        """
         if self._formatted_structure is None:
             self.set_formatted_structure()
 
         return self._formatted_structure
 
     def set_reduced_structure(self):
+        """Attempts to set the Heterodimer reduced structure"""
         formatted_structure_lines = self.get_formatted_structure_lines()
         if formatted_structure_lines is None:
             return
 
         nucleotides = ["A", "T", "G", "C"]
 
+        # Loop to find start of the sequence/target match
         match_start = None
         for i in range(len(formatted_structure_lines[0])):
             if formatted_structure_lines[0][i] in nucleotides:
@@ -100,6 +122,7 @@ class Heterodimer:
         len_oligomer = len(self.oligomer)
         nucleotide_counter = 1
 
+        # Loop to continue until end of sequence/target match
         match_end = None
         for i in range(len(formatted_structure_lines[0])):
             if formatted_structure_lines[0][i] in nucleotides:
@@ -122,6 +145,11 @@ class Heterodimer:
                     f"Dimer position: ...~{match_start+1}..~{match_end}...\n")
 
     def get_reduced_structure(self):
+        """Attempts to (set and) return the Heterodimer reduced structure
+
+        :returns: Truncated pipe-based structure match string
+        :rtype: str
+        """
         if self._reduced_structure is None:
             self.set_reduced_structure()
 
@@ -129,6 +157,9 @@ class Heterodimer:
 
 
 class Homodimer:
+    """Class to hold data about the dimerization of duplicate molecules of a
+    nucleic acid sequence
+    """
     def __init__(self, oligomer):
         self.oligomer = oligomer
 
@@ -139,6 +170,7 @@ class Homodimer:
         self.dh = thermo.dh
         self.ds = thermo.ds
 
+        # Structure and structure lines are given in the primer3 format
         self.structure = thermo.ascii_structure
         self.structure_lines = thermo.ascii_structure_lines
 
@@ -154,6 +186,7 @@ class Homodimer:
         return self.get_formatted_structure()
 
     def set_formatted_structure_lines(self):
+        """Attempts to set the newline split Homodimer formatted structure"""
         if not self.structure_lines:
             return
 
@@ -161,12 +194,19 @@ class Homodimer:
                                                 self.structure_lines)
 
     def get_formatted_structure_lines(self):
+        """Attempts to (set and) return the newline split
+           Homodimer formatted structure
+
+        :returns: String lines with a pipe-based match representation
+        :rtype: list
+        """
         if self._formatted_structure_lines is None:
             self.set_formatted_structure_lines()
 
         return self._formatted_structure_lines
 
     def set_formatted_structure(self):
+        """Attempts to (set and) return the Homodimer formatted structure"""
         formatted_structure_lines = self.get_formatted_structure_lines()
 
         self._formatted_structure = (
@@ -175,6 +215,11 @@ class Homodimer:
                     f"3'   {formatted_structure_lines[2]}   5'\n")
 
     def get_formatted_structure(self):
+        """Attempts to (set and) return the Homodimer formatted structure
+
+        :returns: String with a pipe-base match representation
+        :rtype: str
+        """
         if self._formatted_structure is None:
             self.set_formatted_structure()
 
@@ -182,6 +227,9 @@ class Homodimer:
 
 
 class Hairpin:
+    """Class to hold data about the hairpin formation of a nucleic acid
+    sequence
+    """
     def __init__(self, oligomer):
         self.oligomer = oligomer
 
@@ -192,11 +240,13 @@ class Hairpin:
         self.dh = thermo.dh
         self.ds = thermo.ds
 
+        # Structure and structure lines are given in the primer3 format
         self.structure = thermo.ascii_structure
         self.structure_lines = thermo.ascii_structure_lines
 
 
 class Oligomer:
+    """Class to hold data about a single primer nucleotide oligomer"""
     def __init__(self, oligomer, start=None, max_runs=4):
         base_runs_format = re.compile("\w*(" +
                                       "".join(["A{", str(max_runs), "}|"]) +
@@ -223,9 +273,16 @@ class Oligomer:
         return self.get_rating()
 
     def set_rating(self):
+        """Attempts to set a penalty rating based on oligomer thermodynamics"""
         self._rating = self.calc_rating(self)
 
     def get_rating(self):
+        """Attempts to (set and) return a penalty rating based on
+           oligomer thermodynamics
+
+           :returns: Penalty rating for the given oligomer
+           :rtype: int
+           """
         if self._rating is None:
             self.set_rating()
 
@@ -233,6 +290,14 @@ class Oligomer:
 
     @classmethod
     def calc_rating(self, oligomer):
+        """Rough rating algorithm for determining the quality of an
+        oligomer based on thermodynamics
+
+        :param oligomer:  Oligomer nucleic acid sequence to rate
+        :type oligomer: Oligomer
+        :returns: Penalty rating for the given oligomer
+        :rtype: int
+        """
         rating = 0
 
         rating += -4 * (10**(oligomer.hairpin.dg/-1400) / 10**(-2000/-1400))
@@ -243,6 +308,7 @@ class Oligomer:
 
 
 class PrimerPair:
+    """Class to hold data about a pair of primer nucleotide oligomers."""
     def __init__(self, fwd, rvs, start=None, end=None, genome=None):
         if isinstance(fwd, str):
             self.fwd = Oligomer(fwd)
@@ -350,6 +416,9 @@ class PrimerPair:
         return self.get_rating()
 
     def set_product(self):
+        """Attempts to set the sense strand of the nucleic acid sequence PCR
+           product of the stored pair of primers
+           """
         if self._genome is None:
             raise AttributeError("Genome sequence is required to extract "
                                  "a primer product.")
@@ -370,59 +439,101 @@ class PrimerPair:
         self._product = product
 
     def get_product(self):
+        """Attempts to (set and) return the sense strand of the nucleic acid
+           sequence PCR product of the stored pair of primers.
+
+        :returns: Sense strand of the predicted PCR product
+        :rtype: str
+        """
         if self._product is None:
             self.set_product()
 
         return self._product
 
     def set_anti_product(self):
+        """Attempts to set the antisense strand of the nucleic acid sequence
+           PCR product of the stored pair of primers
+           """
         product = self.get_product()
 
         self._anti_product = str(Seq(product).reverse_complement())
 
     def get_anti_product(self):
+        """Attempts to (set and) return the antisense strand of the nucleic
+           acid sequence PCR product of the stored pair of primers
+
+        :returns: Antisense strand of the predicted PCR product
+        :rtype: str
+        """
         if self._anti_product is None:
             self.set_anti_product()
 
         return self._anti_product
 
     def set_annealing_ta(self):
+        """Attempts to set the optimal annealing temperature for the product
+           and pair of primers
+           """
         product = self.get_product()
+        # Optimal annealing temperature calculated with Rychlik et. al formula
         anneal_tm = ((0.3*self.unst_primer.Tm) + (0.7*calcTm(product))) - 14.9
 
         self._annealing_ta = anneal_tm
 
     def get_annealing_ta(self):
+        """Attempts to (set and) return the optimal annealing temperature for
+           the product and pair of primers
+
+        :returns: Optimal annealing temperature of the product and primers
+        :rtype: float
+        """
         if self._annealing_ta is None:
             self.set_annealing_ta()
 
         return self._annealing_ta
 
     def set_fwd_clamp(self):
+        """Sets the 3' end stability GC clamp for the forward primer"""
         anti_product = self.get_anti_product()
 
         fwd_clamp = Clamp(self.fwd.seq, anti_product)
         self._fwd_clamp = fwd_clamp
 
     def get_fwd_clamp(self):
+        """(Sets and) returns the 3' end stability GC clamp for the forward
+        primer
+
+        :returns: Thermodynamics data for the 3' end stability
+        :rtype: Clamp
+        """
         if self._fwd_clamp is None:
             self.set_fwd_clamp()
 
         return self._fwd_clamp
 
     def set_rvs_clamp(self):
+        """Sets the 3' end stability GC clamp for the reverse primer"""
         product = self.get_product()
 
         rvs_clamp = Clamp(self.rvs.seq, product)
         self._rvs_clamp = rvs_clamp
 
     def get_rvs_clamp(self):
+        """(Sets and) returns the 3' end stability GC clamp for the reverse
+        primer
+
+        :returns: Thermodynamics data for the 3' end stability
+        :rtype: Clamp
+        """
         if self._rvs_clamp is None:
             self.set_rvs_clamp()
 
         return self._rvs_clamp
 
     def set_fwd_antisense_heterodimer(self):
+        """Sets the internal heterodimer between the forward primer and
+        antisense product strand
+        """
         internal_anti_product = self.anti_product[:-len(self.fwd.seq)]
 
         self._fwd_antisense_heterodimer = Heterodimer(self.fwd.seq,
@@ -435,6 +546,9 @@ class PrimerPair:
         return self._fwd_antisense_heterodimer
 
     def set_rvs_antisense_heterodimer(self):
+        """Sets the heterodimer between the reverse primer and the antisense
+        strand
+        """
         self._rvs_antisense_heterodimer = Heterodimer(self.rvs.seq,
                                                       self.anti_product)
 
@@ -445,6 +559,9 @@ class PrimerPair:
         return self._rvs_antisense_heterodimer
 
     def set_fwd_sense_heterodimer(self):
+        """Sets the heterodimer between the forward primer and the sense
+        strand
+        """
         self._fwd_sense_heterodimer = Heterodimer(self.fwd.seq,
                                                   self.product)
 
@@ -455,6 +572,9 @@ class PrimerPair:
         return self._fwd_sense_heterodimer
 
     def set_rvs_sense_heterodimer(self):
+        """Sets the internal heterodimer between the reverse primer and
+        sense product strand
+        """
         internal_product = self.product[:-len(self.rvs.seq)]
 
         self._rvs_sense_heterodimer = Heterodimer(self.rvs.seq,
@@ -467,9 +587,13 @@ class PrimerPair:
         return self._rvs_sense_heterodimer
 
     def set_rating(self):
+        """Attempts to set a penalty rating based on oligomer thermodynamics"""
         self._rating = self.calc_rating(self)
 
     def get_rating(self):
+        """Attempts to (set and) return a penalty rating based on primer pair
+        thermodynamics
+        """
         if self._rating is None:
             self.set_rating()
 
@@ -477,6 +601,15 @@ class PrimerPair:
 
     @classmethod
     def calc_rating(self, primer_pair):
+        """Rough rating algorithm for determining the quality of a primer pair
+        based on thermodynamics
+
+        :param primer_pair:  Primer pair to rate
+        :type primer_pair: PrimerPair
+        :returns: Penalty rating for the given oligomer
+        :rtype: int
+        """
+
         rating = 0
 
         rating += primer_pair.fwd.rating
@@ -503,6 +636,14 @@ class PrimerPair:
 
 
 def format_primer3_match_structure_lines(structure_lines):
+    """Function to replace primer3 dual indented match strings with
+    conventional sequence match lines.
+
+    :param structure_lines: Standard primer3 formatted ascii structure lines
+    :type structure_lines: list
+    :returns: String lines with a pipe-based match representation
+    :rtype: list
+    """
     for i in range(len(structure_lines)):
         structure_lines[i] = structure_lines[i].replace("\t", " ")
     if len(structure_lines[0]) <= 4:
