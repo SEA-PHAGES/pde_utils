@@ -4,6 +4,7 @@
    """
 
 import argparse
+import heapq
 import multiprocessing
 import sys
 import time
@@ -32,6 +33,11 @@ TMRNA_QUERY = "SELECT * FROM tmrna"
 
 
 def main(unparsed_args):
+    """Uses parsed args to run the entirety of the find primers pipeline.
+
+    :param unparsed_args: Input a list of command line args.
+    :type unparsed_args: list[str]
+    """
     args = parse_find_primers(unparsed_args)
 
     config = configfile.build_complete_config(args.config_file)
@@ -54,6 +60,8 @@ def main(unparsed_args):
 
 
 def parse_find_primers(unparsed_args):
+    """Parses find primers arguments and stores them with an argparse object.
+    """
     DATABASE_HELP = """Name of the MySQL database to pull sequences from."""
 
     CONFIG_FILE_HELP = """
@@ -250,6 +258,55 @@ def execute_find_primers(alchemist, folder_path=None,
                          hpn_min=-2000, ho_min=-5000, GC_max=60.0,
                          het_min=-5000, tm_gap=5.0, ta_min=48.0,
                          ta_max=68.0, mode=0, full_genome=False):
+    """Executes the entirety of the file export pipeline.
+
+    :param alchemist: A connected and fully build AlchemyHandler object.
+    :type alchemist: AlchemyHandler
+    :param folder_path: Path
+    :type folder_path: Path
+    :param folder_name: A name for the working directory folder
+    :type folder_name: str
+    :param values: List of values to filter database results
+    :type values: list[str]
+    :param verbose: A boolean value to toggle progress print statements.
+    :type verbose: bool
+    :param filters: A pseudo-SQL WHERE clause string to filter values.
+    :type filters: str
+    :param groups: A list of SQL column names to filter values.
+    :type groups: list[str]
+    :param threads: Number of child process workers to utilize
+    :type threads: int
+    :param prc: Percentage of genomes a pham must exist in to pass prefiltering
+    :type prc: float
+    :param dev_net: Allowance for the primer positions to pass prefiltering
+    :type dev_net: int
+    :param len_oligomer: Length of the oligomers used to create the primers
+    :type len_oligomer: int
+    :param minD: Minimum primer product length to pass primer testing
+    :type minD: int
+    :param maxD: Maximum primer product length to pass primer testing
+    :type maxD: int
+    :param tm_min: Minimum primer melting temperature to pass primer testing
+    :type tm_min: float
+    :param tm_max: Maximum primer melting temperature to pass primer testing
+    :type tm_max: float
+    :param hpn_min: Minimum hairpin Gibbs free energy to pass primer testing
+    :type hpn_min: int
+    :param ho_min: Minimum homodimer Gibbs free energy to pass primer testing
+    :type ho_min: int
+    :param GC_max: Maximum GC content percentage allowed for an oligomer
+    :type GC_max: float
+    :param het_min: Minimum heterodimer Gibbs free energy to pass testing
+    :type het_min: int
+    :param tm_gap: Maximum allowed melting temperature gap between oligomers
+    :type tm_gap: float
+    :param ta_min: Minimum allowed optimal annealing temperature
+    :type ta_min: float
+    :param ta_max: Maximum allowed optimal annealing temperature
+    :type ta_max: float
+    :param mode: Run mode for find primers analysis
+    :type mode: int
+    """
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
     working_path = pipelines_basic.create_working_path(
@@ -355,6 +412,35 @@ def find_oligomers(alchemist, pham_gene_map, genome_map,
                    verbose=False, threads=4, prc=0.8,
                    len_oligomer=20, minD=900, maxD=1100, tm_min=52, tm_max=58,
                    hpn_min=-2000, ho_min=-5000, GC_max=60):
+    """
+
+    :param alchemist: A connected and fully build AlchemyHandler object.
+    :type alchemist: AlchemyHandler
+    :param verbose: A boolean value to toggle progress print statements.
+    :type verbose: bool
+    :param threads: Number of child process workers to utilize
+    :type threads: int
+    :param prc: Percentage of genomes a pham must exist in to pass prefiltering
+    :type prc: float
+    :param len_oligomer: Length of the oligomers used to create the primers
+    :type len_oligomer: int
+    :param minD: Minimum primer product length to pass primer testing
+    :type minD: int
+    :param maxD: Maximum primer product length to pass primer testing
+    :type maxD: int
+    :param tm_min: Minimum primer melting temperature to pass primer testing
+    :type tm_min: float
+    :param tm_max: Maximum primer melting temperature to pass primer testing
+    :type tm_max: float
+    :param hpn_min: Minimum hairpin Gibbs free energy to pass primer testing
+    :type hpn_min: int
+    :param ho_min: Minimum homodimer Gibbs free energy to pass primer testing
+    :type ho_min: int
+    :param GC_max: Maximum GC content percentage allowed for an oligomer
+    :type GC_max: float
+    :returns: Returns forward and reverse oligomers mapped to a position
+    :rtype: list[(int, list[Oligomer])]
+    """
     pham_histogram = {}
     for pham, genes in pham_gene_map.items():
         pham_histogram[pham] = len(genes)
@@ -510,7 +596,7 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
     for result in results:
         pair_results, run_info = result.get()
 
-        tested_primer_pairs = tested_primer_pairs + pair_results
+        tested_primer_pairs.append(pair_results)
         for i in range(len(run_info)):
             total_run_info[i] += run_info[i]
 
@@ -527,11 +613,9 @@ def test_primer_pairs(primer_pairs, genome_map, verbose=False,
         print(f"......{total_run_info[3]} primer pairs "
               "failed thermodynamic checks")
 
-    if verbose:
-        print("......Rating tested primer pairs...")
-    tested_primer_pairs = sorted(tested_primer_pairs,
-                                 key=lambda pair: pair.rating,
-                                 reverse=True)
+    tested_primer_pairs = heapq.merge(tested_primer_pairs,
+                                      key=lambda pair: pair.rating,
+                                      reverse=True)
 
     return list(tested_primer_pairs)
 
@@ -743,6 +827,9 @@ def process_test_primer_pairs(work_items, genome_map, minD, maxD,
 
         if valid_primers:
             pair_results.append(primer_pair)
+
+    pair_results = sorted(pair_results, key=lambda pair: pair.rating,
+                          reverse=False)
 
     return (pair_results, (failed_no_product, failed_many_product,
                            failed_length, failed_thermo))
