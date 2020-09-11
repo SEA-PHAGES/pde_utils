@@ -82,7 +82,7 @@ def write_primer_txt_file(primer_pair, file_path):
         if primer_pair.fwd_antisense_heterodimer.structure_lines:
             heterodimer = primer_pair.fwd_antisense_heterodimer
             filehandle.write(
-                    "Forward/Antisense Internal Dimerization:\n"
+                    "Forward/Antisense Internal Mispriming:\n"
                     f"\t\u0394G: {heterodimer.dg}\n"
                     f"\t\u0394H: {heterodimer.dh}\n"
                     f"\t\u0394S: {heterodimer.ds}\n"
@@ -92,7 +92,7 @@ def write_primer_txt_file(primer_pair, file_path):
         if primer_pair.rvs_antisense_heterodimer.structure_lines:
             heterodimer = primer_pair.rvs_antisense_heterodimer
             filehandle.write(
-                    "Reverse/Antisense Dimerization:\n"
+                    "Reverse/Antisense Mispriming:\n"
                     f"\t\u0394G: {heterodimer.dg}\n"
                     f"\t\u0394H: {heterodimer.dh}\n"
                     f"\t\u0394S: {heterodimer.ds}\n"
@@ -102,7 +102,7 @@ def write_primer_txt_file(primer_pair, file_path):
         if primer_pair.fwd_sense_heterodimer.structure_lines:
             heterodimer = primer_pair.fwd_sense_heterodimer
             filehandle.write(
-                    "Forward/Sense Dimerization:\n"
+                    "Forward/Sense Mispriming:\n"
                     f"\t\u0394G: {heterodimer.dg}\n"
                     f"\t\u0394H: {heterodimer.dh}\n"
                     f"\t\u0394S: {heterodimer.ds}\n"
@@ -112,7 +112,7 @@ def write_primer_txt_file(primer_pair, file_path):
         if primer_pair.rvs_sense_heterodimer.structure_lines:
             heterodimer = primer_pair.fwd_sense_heterodimer
             filehandle.write(
-                    "Reverse/Sense Internal Dimerization:\n"
+                    "Reverse/Sense Internal Mispriming:\n"
                     f"\t\u0394G: {heterodimer.dg}\n"
                     f"\t\u0394H: {heterodimer.dh}\n"
                     f"\t\u0394S: {heterodimer.ds}\n"
