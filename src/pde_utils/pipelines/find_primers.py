@@ -60,7 +60,8 @@ def main(unparsed_args):
                          len_oligomer=args.oligomer_length, tm_min=args.tm_min,
                          tm_max=args.tm_max, tm_gap=args.tm_gap,
                          ta_min=args.ta_min, ta_max=args.ta_max,
-                         mode=args.mode, soft_cap=args.soft_cap)
+                         mode=args.mode, soft_cap=args.soft_cap,
+                         phams_in=args.phams_in)
 
 
 def parse_find_primers(unparsed_args):
@@ -112,6 +113,10 @@ def parse_find_primers(unparsed_args):
         Pipeline option that allows for multithreading of workflows.
             Follow selection argument with number of threads to be used
         """
+
+    PHAMS_IN_HELP = """Find primer selection option that narrows the scope
+        of the primer pair search to the nucleotide regions of inputted phams
+            Follow selection argument with the desired phams"""
 
     MODE_HELP = """
         Find primer parameter option that changes the characteristics of
@@ -221,6 +226,9 @@ def parse_find_primers(unparsed_args):
     parser.add_argument("-g", "--group_by", nargs="*", dest="groups",
                         help=GROUP_BY_HELP)
 
+    parser.add_argument("-phin", "--phams_in", nargs="*", type=int,
+                        help=PHAMS_IN_HELP)
+
     parser.add_argument("-mo", "--mode", type=int, help=MODE_HELP)
     parser.add_argument("-prc", type=float,
                         help=PHAM_REPRESENTATION_CUTOFF_HELP)
@@ -254,7 +262,7 @@ def parse_find_primers(unparsed_args):
                         hpn_min=-2000, ho_min=-5000, het_min=-5000, GC=60.0,
                         oligomer_length=20, tm_min=52.0, tm_max=58, dev_net=0,
                         tm_gap=5.0, ta_min=48.0, ta_max=68.0, mode=0,
-                        soft_cap=None)
+                        soft_cap=None, phams_in=[])
 
     parsed_args = parser.parse_args(unparsed_args[2:])
     return parsed_args
@@ -268,7 +276,7 @@ def execute_find_primers(alchemist, folder_path=None,
                          hpn_min=-2000, ho_min=-5000, GC_max=60.0,
                          het_min=-5000, tm_gap=5.0, ta_min=48.0,
                          ta_max=68.0, mode=0, full_genome=False,
-                         soft_cap=None):
+                         soft_cap=None, phams_in=[]):
     """Executes the entirety of the file export pipeline.
 
     :param alchemist: A connected and fully build AlchemyHandler object.
@@ -372,7 +380,11 @@ def execute_find_primers(alchemist, folder_path=None,
                                     ho_min=ho_min, GC_max=GC_max)
         else:
             pham_gene_map = build_pham_gene_map(db_filter, conditionals,
+                                                phams_in=phams_in,
                                                 verbose=verbose)
+            if not pham_gene_map:
+                print(f"No valid phams found for '{mapped_path}' with current "
+                      "settings")
 
             F_results, R_results = find_oligomers(
                                     alchemist, pham_gene_map, genome_map,
@@ -938,17 +950,24 @@ def map_pos_to_oligomer(oligomers, verbose=False):
 
 
 # TO RELOCATE
-def build_pham_gene_map(db_filter, conditionals, verbose=False):
+def build_pham_gene_map(db_filter, conditionals, phams_in=[], verbose=False):
     gene_col = db_filter.get_column("gene.GeneID")
     pham_col = db_filter.get_column("gene.PhamID")
 
     phams = db_filter.transpose("gene.PhamID")
 
+    if phams_in:
+        phams = list(set(phams_in).intersection(set(phams)))
+
     pham_gene_map = {}
     for pham in phams:
         pham_conditionals = conditionals + [(pham_col == pham)]
-        pham_gene_map[pham] = db_filter.build_values(column=gene_col,
-                                                     where=pham_conditionals)
+
+        gene_values = db_filter.build_values(column=gene_col,
+                                             where=pham_conditionals)
+
+        if gene_values:
+            pham_gene_map[pham] = gene_values
 
     return pham_gene_map
 
