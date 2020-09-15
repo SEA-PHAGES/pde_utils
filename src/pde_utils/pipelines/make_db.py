@@ -207,6 +207,10 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
         shutil.rmtree(db_dir)
 
 
+def create_pham_fastas(alchemist):
+    pass
+
+
 # HHSUITE DB HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 def create_msa_ffindex(fasta_dir, db_dir, db_name, stdout=None):
@@ -347,6 +351,10 @@ def verify_hhsuite_database(db_dir, db_name, threads=1, stdout=None):
         stdout = DEVNULL
 
     return True
+
+
+# MMSEQS DB HELPER FUNCTIONS
+# -----------------------------------------------------------------------------
 
 
 if __name__ == "__main__":
