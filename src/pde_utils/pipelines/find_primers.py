@@ -1,4 +1,5 @@
 """Pipeline to find potential primers from given sequences quickly
+                ionserved_kmer_data.append(subseq)
    using phamilies as an potential indicator of conserved nucleotide
    regions.
    """
@@ -61,7 +62,8 @@ def main(unparsed_args):
                          tm_max=args.tm_max, tm_gap=args.tm_gap,
                          ta_min=args.ta_min, ta_max=args.ta_max,
                          mode=args.mode, soft_cap=args.soft_cap,
-                         phams_in=args.phams_in)
+                         phams_in=args.phams_in,
+                         fwd_in=args.fwd_in, rvs_in=args.rvs_in)
 
 
 def parse_find_primers(unparsed_args):
@@ -196,9 +198,20 @@ def parse_find_primers(unparsed_args):
         during primer matching steps
             Follow parameter argument with the desired net length in base pairs
         """
-    SOFT_CAP_HELP = """Find primer parameter option that restricts the amount
+    SOFT_CAP_HELP = """
+        Find primer parameter option that restricts the amount
         of primer pairs to be evaluated after testing, to limit memory usage
             Follow parameter argument with the desired number of pairs
+        """
+    FORWARD_IN_HELP = """
+        Find primer parameter option that allows for the manual selection
+        of the forward primer oligomer sequence
+            Follow parameter argument with the desired sequence
+        """
+    REVERSE_IN_HELP = """
+        Find primer parameter option that allows for the manual selection
+        of the reverse primer oligomer sequence
+            Follow parameter argument with the desired sequence
         """
 
     parser = argparse.ArgumentParser()
@@ -255,6 +268,8 @@ def parse_find_primers(unparsed_args):
     parser.add_argument("-ta_max", type=float,
                         help=MINIMUM_OPTIMAL_ANNEALING_TEMPERATURE_HELP)
     parser.add_argument("-sc", "--soft_cap", type=int, help=SOFT_CAP_HELP)
+    parser.add_argument("--fwd_in", type=str, help=FORWARD_IN_HELP)
+    parser.add_argument("--rvs_in", type=str, help=REVERSE_IN_HELP)
 
     parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME, folder_path=None,
                         config_file=None, verbose=False, input=[], threads=1,
@@ -262,7 +277,7 @@ def parse_find_primers(unparsed_args):
                         hpn_min=-2000, ho_min=-5000, het_min=-5000, GC=60.0,
                         oligomer_length=20, tm_min=52.0, tm_max=58, dev_net=0,
                         tm_gap=5.0, ta_min=48.0, ta_max=68.0, mode=0,
-                        soft_cap=None, phams_in=[])
+                        soft_cap=None, phams_in=[], fwd_in=None, rvs_in=None)
 
     parsed_args = parser.parse_args(unparsed_args[2:])
     return parsed_args
@@ -275,6 +290,7 @@ def execute_find_primers(alchemist, folder_path=None,
                          minD=900, maxD=1100, tm_min=52.0, tm_max=58.0,
                          hpn_min=-2000, ho_min=-5000, GC_max=60.0,
                          het_min=-5000, tm_gap=5.0, ta_min=48.0,
+                         fwd_in=None, rvs_in=None,
                          ta_max=68.0, mode=0, full_genome=False,
                          soft_cap=None, phams_in=[]):
     """Executes the entirety of the file export pipeline.
@@ -323,10 +339,16 @@ def execute_find_primers(alchemist, folder_path=None,
     :type ta_min: float
     :param ta_max: Maximum allowed optimal annealing temperature
     :type ta_max: float
+    :param fwd_in: Fixed forward sequence to find primer pairs for
+    :type fwd_in: str
+    :param rvs_in: Fixed reverse sequence to find primer pairs for
+    :type rvs_in: str
     :param mode: Run mode for find primers analysis
     :type mode: int
     :param soft_cap: Cap limit on number of pairs evaluated after testing
     :type soft_cap: int
+    :param phams_in: Phams to evaluate during count min sketch eval of kmers
+    :type phams_in: list[str]
     """
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
 
@@ -392,7 +414,8 @@ def execute_find_primers(alchemist, folder_path=None,
                                     minD=minD, maxD=maxD,
                                     len_oligomer=len_oligomer, tm_min=tm_min,
                                     tm_max=tm_max, hpn_min=hpn_min,
-                                    ho_min=ho_min, GC_max=GC_max)
+                                    ho_min=ho_min, GC_max=GC_max,
+                                    fwd_in=fwd_in, rvs_in=rvs_in)
 
         if (not F_results) or (not R_results):
             if verbose:
@@ -457,7 +480,8 @@ def execute_find_primers(alchemist, folder_path=None,
 def find_oligomers(alchemist, pham_gene_map, genome_map,
                    verbose=False, threads=4, prc=0.8,
                    len_oligomer=20, minD=900, maxD=1100, tm_min=52, tm_max=58,
-                   hpn_min=-2000, ho_min=-5000, GC_max=60):
+                   hpn_min=-2000, ho_min=-5000, GC_max=60, fwd_in=None,
+                   rvs_in=None):
     """
 
     :param alchemist: A connected and fully build AlchemyHandler object.
@@ -484,6 +508,10 @@ def find_oligomers(alchemist, pham_gene_map, genome_map,
     :type ho_min: int
     :param GC_max: Maximum GC content percentage allowed for an oligomer
     :type GC_max: float
+    :param fwd_in: Fixed forward sequence to find primer pairs for
+    :type fwd_in: str
+    :param rvs_in: Fixed reverse sequence to find primer pairs for
+    :type rvs_in: str
     :returns: Returns forward and reverse oligomers mapped to a position
     :rtype: list[(int, list[Oligomer])]
     """
@@ -522,7 +550,8 @@ def find_oligomers(alchemist, pham_gene_map, genome_map,
                 process_find_oligomers, args=(work_bundle, managed_genome_map,
                                               len_oligomer, minD,
                                               maxD, tm_min, tm_max, hpn_min,
-                                              ho_min, GC_max, verbose)))
+                                              ho_min, GC_max, fwd_in,
+                                              rvs_in, verbose)))
 
     for result in results:
         F_pos_map, R_pos_map = result.get()
@@ -531,6 +560,33 @@ def find_oligomers(alchemist, pham_gene_map, genome_map,
 
     thread_pool.close()
     thread_pool.join()
+
+    if (fwd_in is not None) or (rvs_in is not None):
+        genome_sequences = []
+        for genome_id, genome_obj in genome_map.items():
+            genome_sequences.append(str(genome_obj.seq))
+
+        if fwd_in is not None:
+            try:
+                fwd_start = find_oligomer_pos(fwd_in, genome_sequences, "F")
+            except ValueError:
+                F_pos_oligomer_map = {}
+                print("Forward in sequence has an undesired number of "
+                      "positions within the given genome sequences")
+            else:
+                F_pos_oligomer_map = {fwd_start: [primer3.Oligomer(
+                                                    fwd_in, start=fwd_start)]}
+
+        if rvs_in is not None:
+            try:
+                rvs_start = find_oligomer_pos(rvs_in, genome_sequences, "R")
+            except ValueError:
+                R_pos_oligomer_map = {}
+                print("Reverse in sequence has an undesired number of "
+                      "positions within the given genome sequences")
+            else:
+                R_pos_oligomer_map = {rvs_start: [primer3.Oligomer(
+                                                    rvs_in, start=rvs_start)]}
 
     F_results = []
     for pos, oligomers in F_pos_oligomer_map.items():
@@ -768,18 +824,32 @@ def invert_dictionary(dictionary):
     return new_dict
 
 
+def find_oligomer_pos(subsequence, sequences, orientation):
+    if orientation == "R":
+        match_seq = str(Seq(subsequence).reverse_complement())
+    else:
+        match_seq = subsequence
+
+    avg_start = 0
+    for sequence in sequences:
+        starts = seq.find_subsequence_starts(match_seq, sequence,
+                                             zero_index=False)
+
+        if len(starts) != 1:
+            raise ValueError
+
+        avg_start += starts[0]
+
+    avg_start = int(round((avg_start/len(sequences)), 0))
+
+    return avg_start
+
+
 def process_find_oligomers(work_bundle, work_data_cache, len_oligomer,
                            minD, maxD, tm_min, tm_max, hpn_min, ho_min,
-                           GC_max, verbose):
+                           GC_max, fwd_in, rvs_in, verbose):
     pham = work_bundle[0]
     cds_list = work_bundle[1]
-
-    starts = []
-    avg_start = 0
-    for cds in cds_list:
-        starts.append(cds.start)
-        avg_start += cds.start
-    avg_start = int(round(avg_start/len(cds_list), 0))
 
     avg_orientation = 0
     for cds in cds_list:
@@ -806,14 +876,21 @@ def process_find_oligomers(work_bundle, work_data_cache, len_oligomer,
         print(f"...Pham {pham} has {num_conserved_kmers} "
               "conserved kmers...")
 
-    F_oligomers = get_stable_oligomers(
-                                    conserved_kmer_data, avg_start, "F",
+    if fwd_in is not None:
+        F_oligomers = []
+    else:
+        F_oligomers = get_stable_oligomers(
+                                    conserved_kmer_data, work_data_cache, "F",
                                     tm_min=tm_min, tm_max=tm_max,
                                     hpn_min=hpn_min,
                                     ho_min=ho_min,
                                     GC_max=GC_max)
-    R_oligomers = get_stable_oligomers(
-                                    conserved_kmer_data, avg_start, "R",
+
+    if rvs_in is not None:
+        R_oligomers = []
+    else:
+        R_oligomers = get_stable_oligomers(
+                                    conserved_kmer_data, work_data_cache, "R",
                                     tm_min=tm_min, tm_max=tm_max,
                                     hpn_min=hpn_min,
                                     ho_min=ho_min,
@@ -827,10 +904,12 @@ def process_find_oligomers(work_bundle, work_data_cache, len_oligomer,
         return {}, {}
 
     if verbose:
-        print(f"......Pham {pham} has {len(F_oligomers)} "
-              "stable forward putative primer oligomers.")
-        print(f"......Pham {pham} has {len(R_oligomers)} "
-              "stable reverse putative primer oligomers.")
+        if fwd_in is None:
+            print(f"......Pham {pham} has {len(F_oligomers)} "
+                  "stable forward putative primer oligomers.")
+        if rvs_in is None:
+            print(f"......Pham {pham} has {len(R_oligomers)} "
+                  "stable reverse putative primer oligomers.")
 
     pham_F_pos_oligomer_map = map_pos_to_oligomer(F_oligomers,
                                                   verbose=verbose)
@@ -908,10 +987,14 @@ def process_test_primer_pairs(work_items, genome_map, minD, maxD,
                            failed_length, failed_thermo))
 
 
-def get_stable_oligomers(conserved_kmer_data, avg_start, orientation,
+def get_stable_oligomers(conserved_kmer_data, genome_map, orientation,
                          tm_min=52, tm_max=58, hpn_min=-2000,
                          ho_min=-5000, GC_max=60):
     oligomers = []
+
+    genome_sequences = []
+    for genome_id, genome_obj in genome_map.items():
+        genome_sequences.append(str(genome_obj.seq))
 
     for kmer, kmer_data in conserved_kmer_data.items():
         if kmer_data[0][0].orientation != orientation:
@@ -928,12 +1011,12 @@ def get_stable_oligomers(conserved_kmer_data, avg_start, orientation,
         if not stable:
             continue
 
-        avg_kmer_start = 0
-        for data in kmer_data:
-            avg_kmer_start += data[1]
-        avg_kmer_start = int(round(avg_kmer_start/len(kmer_data), 0))
-        oligomer.start = avg_kmer_start
+        try:
+            avg_start = find_oligomer_pos(kmer, genome_sequences, orientation)
+        except ValueError:
+            continue
 
+        oligomer.start = avg_start
         oligomers.append(oligomer)
 
     return oligomers

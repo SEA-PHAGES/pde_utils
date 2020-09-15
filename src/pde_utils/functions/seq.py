@@ -1,3 +1,5 @@
+import re
+
 from pdm_utils.pipelines import export_db
 
 from pde_utils.classes import kmers
@@ -49,3 +51,16 @@ def find_conserved_kmers(seq_id_to_sequence_map, kmer_length,
                 conserved_kmer_data[subseq] = kmer_data
 
     return conserved_kmer_data
+
+
+def find_subsequence_starts(subsequence, sequence, zero_index=True):
+    subseq_format = re.compile(subsequence)
+
+    starts = []
+    for match in re.finditer(subseq_format, sequence):
+        start = match.start()
+        if not zero_index:
+            start += 1
+        starts.append(start)
+
+    return starts
