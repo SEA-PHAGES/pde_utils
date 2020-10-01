@@ -14,7 +14,7 @@ from pde_utils.functions import alignment
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
 
-DATABASE_TYPES = ["hhsuite", "mmseqs", "blast"]
+DATABASE_TYPES = ["hhsuite", "blastp"]
 
 DEFAULT_FOLDER_NAME = f"{time.strftime('%Y%m%d')}_db"
 DEFAULT_FOLDER_PATH = Path.cwd()
@@ -176,7 +176,7 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     aln_dir.mkdir()
 
     create_pham_alignments(
-                    alchemist.engine, values, aln_dir, data_cache=data_cache,
+                    alchemist, values, aln_dir, data_cache=data_cache,
                     threads=threads, verbose=verbose)
 
     if verbose:
@@ -216,6 +216,20 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
         print(f"Inconsistencies detected in HHsuite database "
               f"at '{db_dir}'.\n  Scrapping database.")
         shutil.rmtree(db_dir)
+
+
+def execute_make_mmseqs_database(alchemist, values, db_dir, db_name,
+                                 data_cache=None, verbose=False, threads=1):
+    pass
+
+
+def execute_make_blast_protein_database(
+                                    alchemist, values, db_dir, db_name,
+                                    data_cache=None, verbose=False, threads=1):
+    pass
+
+# HELPER FUNCTIONS
+# -----------------------------------------------------------------------------
 
 
 def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
