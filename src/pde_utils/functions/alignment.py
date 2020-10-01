@@ -3,8 +3,11 @@ from subprocess import Popen, PIPE
 
 from Bio import AlignIO
 from Bio.Emboss import Applications
-from pdm_utils.functions import fileio
+from pdm_utils.functions import fileio as pdm_fileio
 from pdm_utils.functions import mysqldb_basic
+from pdm_utils.functions import parallelize
+
+from pde_utils.functions import multithread
 
 # GLOBAL VARIABLES
 # ----------------------------------------------------------------------
@@ -162,10 +165,10 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
               f"--threads={threads}"
 
     if mat_out_path is not None:
-        command = " ".join([command, (f"--distmat-out={mat_out_path} "
+        command = " ".join([command, (f"--distmat-out{mat_out_path} "
                                       "--full --percent-id")])
 
-    for x in range(verbose):
+    for _ in range(verbose):
         command += " -v"                # Add verbosity to command
     command = shlex.split(command)      # Convert command to arg list
 
@@ -319,11 +322,12 @@ def get_pham_genes(engine, phamid):
     return pham_genes
 
 
-def create_pham_fasta(engine, phams, aln_dir, data_cache=None,
-                      verbose=False):
+def create_pham_fastas(engine, phams, aln_dir, data_cache=None, threads=1,
+                       verbose=False):
     if data_cache is None:
         data_cache = {}
 
+    work_items = []
     fasta_path_map = {}
     for pham in phams:
         fasta_path = aln_dir.joinpath(".".join([str(pham), "fasta"]))
@@ -334,48 +338,63 @@ def create_pham_fasta(engine, phams, aln_dir, data_cache=None,
             gs_to_ts = get_pham_genes(engine, pham)
             data_cache[pham] = gs_to_ts
 
-        fileio.write_fasta(gs_to_ts, fasta_path)
+        work_items.append((gs_to_ts, fasta_path))
+
+    multithread.multithread(pdm_fileio.write_fasta, work_items, threads)
 
     return fasta_path_map
 
 
-def align_pham_fastas(fasta_path_map, mat_out=False, threads=1, verbose=False):
+def align_pham_fastas(fasta_path_map, mat_out=False, override=False,
+                      threads=1, verbose=False):
     if verbose:
         verbose = 2
     else:
         verbose = 0
 
-    mat_path_map = {}
+    work_items = []
+    aln_path_map = {}
     for pham, fasta_path in fasta_path_map.items():
+        if override:
+            aln_path = fasta_path
+        else:
+            aln_path = fasta_path.with_name(".".join([str(pham), "aln"]))
+
+        aln_path_map[pham] = aln_path
+
         mat_path = None
         if mat_out:
             mat_path = fasta_path.with_name(".".join([str(pham), "mat"]))
-            mat_path_map[pham] = mat_path
 
-        clustalo(fasta_path, fasta_path, outfmt="fasta", mat_out_path=mat_path,
-                 threads=threads, verbose=verbose)
+        work_items.append((fasta_path, aln_path, mat_path,
+                          "fasta", "fasta", 1, verbose))
 
-    return mat_path_map
+    parallelize.parallelize(work_items, threads, clustalo)
+
+    return aln_path_map
 
 
-def create_pham_hmms(fasta_path_map, name=False, M=50,
-                     add_cons=False, seq_lim=None, verbose=False):
+def create_pham_hmms(aln_path_map, name=False, M=50, seq_id=90,
+                     add_cons=False, seq_lim=None, threads=1, verbose=False):
     if verbose:
         verbose = 2
     else:
         verbose = 0
 
+    work_items = []
     hmm_path_map = {}
-    for pham, fasta_path in fasta_path_map.items():
+    for pham, aln_path in aln_path_map.items():
 
-        hmm_path = fasta_path.with_name(".".join([str(pham), "hmm"]))
+        hmm_path = aln_path.with_name(".".join([str(pham), "hmm"]))
         hmm_path_map[pham] = hmm_path
 
         hmm_name = None
         if name:
             hmm_name = str(pham)
 
-        hhmake(fasta_path, hmm_path, name=hmm_name, add_cons=add_cons,
-               M=M, seq_lim=seq_lim, verbose=verbose)
+        work_items.append(aln_path, hmm_path, hmm_name,
+                          add_cons, seq_lim, M, seq_id, verbose)
+
+    parallelize.parallelize(work_items, threads, hhmake)
 
     return hmm_path_map

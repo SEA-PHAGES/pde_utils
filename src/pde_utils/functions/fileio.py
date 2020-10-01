@@ -1,6 +1,50 @@
+import json
 import textwrap
 
 from Bio.Seq import Seq
+from networkx import readwrite
+
+
+def write_graph(graph, file_format, export_path, file_name):
+    file_path = export_path.joinpath(f"{file_name}.{file_format}")
+
+    if file_format == "csv":
+        readwrite.edgelist.write_edgelist(graph, file_path, delimiter=",",
+                                          data=EDGE_WEIGHTS)
+    elif file_format == "gexf":
+        readwrite.gexf.write_gexf(graph, file_path)
+    elif file_format == "gml":
+        readwrite.gml.write_gml(graph, file_path)
+    elif file_format == "gpickle":
+        readwrite.gpickle.write_gpickle(graph, file_path)
+    elif file_format == "graphml":
+        readwrite.graphml.write_graphml(graph, file_path)
+    elif file_format == "json" or file_format == "cyjs":
+        if file_format == "json":
+            json_data = readwrite.json_graph.node_link_data(graph)
+        else:
+            json_data = readwrite.json_graph.cytoscape_data(graph)
+
+        file_path.touch()
+        file_handle = file_path.open(mode="w")
+        json.dump(json_data, file_handle)
+        file_handle.close()
+    elif file_format == "yaml":
+        readwrite.nx_yaml.write_yaml(graph, file_path)
+    elif file_format == "pajek":
+        readwrite.pajek.write_pajek(graph, file_path)
+    elif file_format == "shp":
+        readwrite.nx_shp.write_shp(graph, export_path)
+    elif file_format == "al":
+        readwrite.adjlist.write_adjlist(graph, file_path)
+    elif file_format == "nl":
+        file_path.touch()
+        file_handle = file_path.open(mode="w")
+        for node in list(graph.nodes()):
+            file_handle.write(f"{node}\n")
+        file_handle.close()
+    else:
+        raise ValueError("Graph output format is not recognized.")
 
 
 def write_primer_txt_file(primer_pair, file_path):

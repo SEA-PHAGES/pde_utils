@@ -227,7 +227,7 @@ def parse_find_primers(unparsed_args):
                         type=Path, help=FOLDER_PATH_HELP)
     parser.add_argument("-v", "--verbose", action="store_true",
                         help=VERBOSE_HELP)
-    parser.add_argument("-th", "--threads", type=int, help=NUMBER_THREADS_HELP)
+    parser.add_argument("-np", "--threads", type=int, help=NUMBER_THREADS_HELP)
 
     parser.add_argument("-if", "--import_file", dest="input",
                         type=pipelines_basic.convert_file_path,
