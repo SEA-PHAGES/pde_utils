@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, Popen
 
+from pdm_utils.functions import fileio as pdm_fileio
+from pdm_utils.functions import parallelize
 from pdm_utils.functions import pipelines_basic
 
 from pde_utils.functions import alignment
@@ -167,7 +169,7 @@ def execute_make_db(alchemist, folder_path, folder_name, db_type,
             execute_make_hhsuite_database(alchemist, db_filter.values,
                                           mapped_path, db_name,
                                           data_cache=data_cache,
-                                          threads=threads)
+                                          threads=threads, verbose=verbose)
 
 
 def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
@@ -175,24 +177,35 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     aln_dir = db_dir.joinpath("pham_alignments")
     aln_dir.mkdir()
 
-    fasta_path_map = alignment.create_pham_fasta(
-                                    alchemist.engine, values, aln_dir,
-                                    data_cache=data_cache, verbose=verbose)
-    alignment.align_pham_fastas(fasta_path_map, threads=threads,
-                                verbose=verbose)
+    create_pham_alignments(alchemist.engine, values, aln_dir,
+                           data_cache=data_cache, verbose=verbose)
 
     if verbose:
         stdout = PIPE
     else:
         stdout = DEVNULL
 
+    if verbose:
+        print("Creating multiple sequence ffindex file...")
     msa_fftuple = create_msa_ffindex(aln_dir, db_dir, db_name, stdout=stdout)
+
+    if verbose:
+        print("Condensing multiple sequence ffindex file into a3m file...")
     a3m_fftuple = create_a3m_ffindex(db_dir, db_name, msa_fftuple,
                                      threads=threads, stdout=stdout)
+
+    sys.exit(1)
+    if verbose:
+        print("Creating Hidden Markov Model ffindex file...")
     hmm_fftuple = create_hmm_ffindex(db_dir, db_name, a3m_fftuple,
                                      threads=threads, stdout=stdout)
+
+    if verbose:
+        print("Creating cs219 ffindex file...")
     create_cs219_ffindex(db_dir, db_name, stdout=stdout)
 
+    if verbose:
+        print("Sorting ffindex files for fast database indexing...")
     sorting_file = create_sorting_file(db_dir, db_name, stdout=stdout)
     sort_a3m_ffindex(db_dir, db_name, sorting_file, a3m_fftuple, stdout=stdout)
     sort_hmm_ffindex(db_dir, db_name, sorting_file, hmm_fftuple, stdout=stdout)
@@ -207,8 +220,39 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
         shutil.rmtree(db_dir)
 
 
-def create_pham_fastas(alchemist):
-    pass
+def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
+                           threads=1, verbose=False):
+    if data_cache is None:
+        data_cache = {}
+
+    fasta_work_items = []
+    clustalo_work_items = []
+
+    if verbose:
+        print("Retrieviving pham data...")
+    fasta_path_map = {}
+    for pham in values:
+        fasta_path = aln_dir.joinpath(".".join([str(pham), "fasta"]))
+        fasta_path_map[pham] = fasta_path
+
+        gs_to_ts = data_cache.get(pham)
+        if gs_to_ts is None:
+            gs_to_ts = alignment.get_pham_genes(alchemist.engine, pham)
+            data_cache[pham] = gs_to_ts
+
+        fasta_work_items.append((gs_to_ts, fasta_path))
+        clustalo_work_items.append((fasta_path, fasta_path))
+
+    if verbose:
+        print("Writing pham fasta multiple sequence files...")
+    parallelize.parallelize(fasta_work_items, threads,
+                            pdm_fileio.write_fasta)
+
+    if verbose:
+        print("Aligning pham fasta multiple sequence files...")
+    parallelize.parallelize(clustalo_work_items, threads, alignment.clustalo)
+
+    return fasta_path_map
 
 
 # HHSUITE DB HELPER FUNCTIONS
