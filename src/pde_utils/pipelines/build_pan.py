@@ -221,14 +221,19 @@ def create_pham_files(engine, values, aln_dir, threads=1, M=50, verbose=False,
         data_cache = {}
 
     fasta_path_map = alignment.create_pham_fasta(engine, values, aln_dir,
-                                                 data_cache=data_cache)
-    mat_path_map = alignment.align_pham_fastas(fasta_path_map, mat_out=True,
-                                               threads=threads,
-                                               verbose=verbose)
+                                                 data_cache=data_cache,
+                                                 threads=threads)
+    aln_path_map = alignment.align_pham_fastas(fasta_path_map, mat_out=True,
+                                               threads=threads, override=True)
     hmm_path_map = alignment.create_pham_hmms(fasta_path_map, name=True,
-                                              M=M, verbose=verbose)
+                                              M=M, threads=threads)
 
-    return (fasta_path_map, mat_path_map, hmm_path_map)
+    mat_path_map = {}
+    for pham, aln_path in aln_path_map.items():
+        mat_path = aln_path.with_name(".".join([str(pham), "fasta"]))
+        mat_path_map[pham] = mat_path
+
+    return (aln_path_map, mat_path_map, hmm_path_map)
 
 
 def build_pan_base(alchemist, values, base_maps_tuple, data_cache=None):

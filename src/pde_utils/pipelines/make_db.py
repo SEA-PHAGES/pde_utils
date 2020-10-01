@@ -7,8 +7,6 @@ import time
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, Popen
 
-from pdm_utils.functions import fileio as pdm_fileio
-from pdm_utils.functions import parallelize
 from pdm_utils.functions import pipelines_basic
 
 from pde_utils.functions import alignment
@@ -177,8 +175,9 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     aln_dir = db_dir.joinpath("pham_alignments")
     aln_dir.mkdir()
 
-    create_pham_alignments(alchemist.engine, values, aln_dir,
-                           data_cache=data_cache, verbose=verbose)
+    create_pham_alignments(
+                    alchemist.engine, values, aln_dir, data_cache=data_cache,
+                    threads=threads, verbose=verbose)
 
     if verbose:
         stdout = PIPE
@@ -194,7 +193,6 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     a3m_fftuple = create_a3m_ffindex(db_dir, db_name, msa_fftuple,
                                      threads=threads, stdout=stdout)
 
-    sys.exit(1)
     if verbose:
         print("Creating Hidden Markov Model ffindex file...")
     hmm_fftuple = create_hmm_ffindex(db_dir, db_name, a3m_fftuple,
@@ -225,34 +223,20 @@ def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
     if data_cache is None:
         data_cache = {}
 
-    fasta_work_items = []
-    clustalo_work_items = []
+    if verbose:
+        print("Writing pham amino acid sequences to file...")
+    fasta_path_map = alignment.create_pham_fastas(
+                                        alchemist.engine, values, aln_dir,
+                                        data_cache=data_cache, threads=threads,
+                                        verbose=False)
 
     if verbose:
-        print("Retrieviving pham data...")
-    fasta_path_map = {}
-    for pham in values:
-        fasta_path = aln_dir.joinpath(".".join([str(pham), "fasta"]))
-        fasta_path_map[pham] = fasta_path
+        print("Aligning pham amino acid sequences...")
+    aln_path_map = alignment.align_pham_fastas(
+                                        fasta_path_map, override=True,
+                                        threads=threads, verbose=False)
 
-        gs_to_ts = data_cache.get(pham)
-        if gs_to_ts is None:
-            gs_to_ts = alignment.get_pham_genes(alchemist.engine, pham)
-            data_cache[pham] = gs_to_ts
-
-        fasta_work_items.append((gs_to_ts, fasta_path))
-        clustalo_work_items.append((fasta_path, fasta_path))
-
-    if verbose:
-        print("Writing pham fasta multiple sequence files...")
-    parallelize.parallelize(fasta_work_items, threads,
-                            pdm_fileio.write_fasta)
-
-    if verbose:
-        print("Aligning pham fasta multiple sequence files...")
-    parallelize.parallelize(clustalo_work_items, threads, alignment.clustalo)
-
-    return fasta_path_map
+    return aln_path_map
 
 
 # HHSUITE DB HELPER FUNCTIONS
