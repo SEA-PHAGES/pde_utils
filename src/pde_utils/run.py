@@ -1,12 +1,17 @@
 import argparse
+import timeit
 
-from pde_utils.pipelines import build_pan, find_primers, make_db
+from pde_utils.pipelines import (
+                    build_pan, find_primers, make_db, pham_align)
 
-VALID_PIPELINES = ["build_pan", "find_primers", "make_db"]
+VALID_PIPELINES = ["build_pan", "find_primers", "make_db", "pham_align"]
+
 
 def main(unparsed_args):
     """Run a a pde_utils pipeline."""
-    args = parse_args(unparsed_args) 
+    args = parse_args(unparsed_args)
+
+    start = timeit.default_timer()
 
     if args.pipeline == "build_pan":
         build_pan.main(unparsed_args)
@@ -14,6 +19,12 @@ def main(unparsed_args):
         find_primers.main(unparsed_args)
     elif args.pipeline == "make_db":
         make_db.main(unparsed_args)
+    elif args.pipeline == "pham_align":
+        pham_align.main(unparsed_args)
+
+    stop = timeit.default_timer()
+
+    print(f"\n\nPipeline completed.\nTime elapsed: {round(stop-start, 3)}s")
 
 
 def parse_args(unparsed_args):
@@ -31,10 +42,8 @@ def parse_args(unparsed_args):
 
     parser = argparse.ArgumentParser(description=RUN_HELP, usage=USAGE)
     parser.add_argument("pipeline", type=str, choices=VALID_PIPELINES,
-                                              help=PIPELINE_HELP)
+                        help=PIPELINE_HELP)
 
     args = parser.parse_args(unparsed_args[1:2])
 
     return args
-
-
