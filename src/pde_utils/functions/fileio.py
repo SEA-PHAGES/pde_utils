@@ -4,13 +4,19 @@ import textwrap
 from Bio.Seq import Seq
 from networkx import readwrite
 
+# GLOBAL VARIABLES
+# -----------------------------------------------------------------------------
 
-def write_graph(graph, file_format, export_path, file_name):
+NETWORKX_FILE_TYPES = ["csv", "gexf", "gpickle", "graphml", "al", "nl",
+                       "json", "cyjs", "yaml", "pajek", "shp"]
+
+
+def write_graph(graph, file_format, export_path, file_name, edge_weights=[]):
     file_path = export_path.joinpath(f"{file_name}.{file_format}")
 
     if file_format == "csv":
         readwrite.edgelist.write_edgelist(graph, file_path, delimiter=",",
-                                          data=EDGE_WEIGHTS)
+                                          data=edge_weights)
     elif file_format == "gexf":
         readwrite.gexf.write_gexf(graph, file_path)
     elif file_format == "gml":

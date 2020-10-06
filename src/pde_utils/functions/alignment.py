@@ -125,8 +125,8 @@ def create_water_cline(query_seq_path, target_seq_path, outfile_path,
 # ---------------------------------------------------------------------
 
 
-def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
-             infmt="fasta", threads=1, verbose=0):
+def clustalo(fasta_file, aln_out_path, mat_out_path=None, tree_out_path=None,
+             outfmt="clustal", infmt="fasta", threads=1, verbose=0):
     """
     Runs Clustal Omega to generate a multiple sequence alignment (MSA)
     and percent identity matrix (PIM) for the indicated file. Infile is
@@ -137,9 +137,12 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
     :param aln_out_path: the multiple sequence alignment (MSA) output file
     :type aln_out_path: str
     :type aln_out_path: Path
-    :param mat_out_path: the percent identity matrix (PIM) output file
+    :param mat_out_path: The percent identity matrix (PIM) output file
     :type mat_out_path: str
     :type mat_out_path: Path
+    :param tree_out_path: The alignment guide tree output file
+    :type tree_out_path: str
+    :type tree_out_path: Path
     :param outfmt: The file format of the alignment to be exported.
     :type outfmt: str
     :param infmt:  The file format of the sequence file to be read in
@@ -165,8 +168,10 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, outfmt="clustal",
               f"--threads={threads}"
 
     if mat_out_path is not None:
-        command = " ".join([command, (f"--distmat-out{mat_out_path} "
+        command = " ".join([command, (f"--distmat-out={mat_out_path} "
                                       "--full --percent-id")])
+    if tree_out_path is not None:
+        command = " ".join([command, (f"--guidetree-out={tree_out_path} ")])
 
     for _ in range(verbose):
         command += " -v"                # Add verbosity to command
@@ -345,12 +350,10 @@ def create_pham_fastas(engine, phams, aln_dir, data_cache=None, threads=1,
     return fasta_path_map
 
 
-def align_pham_fastas(fasta_path_map, mat_out=False, override=False,
-                      threads=1, verbose=False):
-    if verbose:
-        verbose = 2
-    else:
-        verbose = 0
+def align_fastas(fasta_path_map, mat_out=False, tree_out=False,
+                 file_type="fasta", mode="clustalo", override=False,
+                 threads=1, verbose=False):
+    verbose_num = 0
 
     work_items = []
     aln_path_map = {}
@@ -366,20 +369,26 @@ def align_pham_fastas(fasta_path_map, mat_out=False, override=False,
         if mat_out:
             mat_path = fasta_path.with_name(".".join([str(pham), "mat"]))
 
-        work_items.append((fasta_path, aln_path, mat_path,
-                          "fasta", "fasta", 1, verbose))
+        tree_path = None
+        if tree_out:
+            tree_path = fasta_path.with_name(".".join([str(pham), "tree"]))
 
-    parallelize.parallelize(work_items, threads, clustalo)
+        work_items.append((fasta_path, aln_path, mat_path, tree_path,
+                          file_type, "fasta", 1, verbose_num))
+
+    if mode == "clustalo":
+        aln_driver = clustalo
+    else:
+        raise NotImplementedError("Alignment program not supported.")
+
+    parallelize.parallelize(work_items, threads, aln_driver, verbose=verbose)
 
     return aln_path_map
 
 
-def create_pham_hmms(aln_path_map, name=False, M=50, seq_id=90,
-                     add_cons=False, seq_lim=None, threads=1, verbose=False):
-    if verbose:
-        verbose = 2
-    else:
-        verbose = 0
+def create_hmms(aln_path_map, name=False, M=50, seq_id=90,
+                add_cons=False, seq_lim=None, threads=1, verbose=False):
+    verbose_num = 0
 
     work_items = []
     hmm_path_map = {}
@@ -392,9 +401,9 @@ def create_pham_hmms(aln_path_map, name=False, M=50, seq_id=90,
         if name:
             hmm_name = str(pham)
 
-        work_items.append(aln_path, hmm_path, hmm_name,
-                          add_cons, seq_lim, M, seq_id, verbose)
+        work_items.append((aln_path, hmm_path, hmm_name,
+                           add_cons, seq_lim, M, seq_id, verbose_num))
 
-    parallelize.parallelize(work_items, threads, hhmake)
+    parallelize.parallelize(work_items, threads, hhmake, verbose=verbose)
 
     return hmm_path_map

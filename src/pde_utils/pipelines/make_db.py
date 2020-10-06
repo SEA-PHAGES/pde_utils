@@ -4,9 +4,9 @@ import shutil
 import shlex
 import sys
 import time
+from psutil import cpu_count
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, Popen
-
 from pdm_utils.functions import pipelines_basic
 
 from pde_utils.functions import alignment
@@ -184,6 +184,15 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     else:
         stdout = DEVNULL
 
+    physical_cores = cpu_count(logical=False)
+
+    if physical_cores < threads:
+        if verbose:
+            print("Designated process count greater than machine's number of "
+                  "physical cores...\n"
+                  f"STEPPING DOWN TO {physical_cores} PROCESSES")
+        threads = physical_cores
+
     if verbose:
         print("Creating multiple sequence ffindex file...")
     msa_fftuple = create_msa_ffindex(aln_dir, db_dir, db_name, stdout=stdout)
@@ -242,13 +251,13 @@ def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
     fasta_path_map = alignment.create_pham_fastas(
                                         alchemist.engine, values, aln_dir,
                                         data_cache=data_cache, threads=threads,
-                                        verbose=False)
+                                        verbose=verbose)
 
     if verbose:
         print("Aligning pham amino acid sequences...")
-    aln_path_map = alignment.align_pham_fastas(
+    aln_path_map = alignment.align_fastas(
                                         fasta_path_map, override=True,
-                                        threads=threads, verbose=False)
+                                        threads=threads, verbose=verbose)
 
     return aln_path_map
 

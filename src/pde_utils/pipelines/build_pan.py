@@ -2,27 +2,28 @@ import argparse
 import sys
 import time
 from decimal import Decimal
+from threading import Lock
 from pathlib import Path
 
-from networkx import MultiDiGraph, Graph
-from pdm_utils.functions import basic
+from Bio import Phylo
+from networkx import Graph
+from pdm_utils.functions import configfile
 from pdm_utils.functions import fileio as pdm_fileio
+from pdm_utils.functions import parallelize
 from pdm_utils.functions import pipelines_basic
 from pdm_utils.functions import phameration
 
 from pde_utils.classes import clustal
+from pde_utils.classes import pan_models
 from pde_utils.functions import alignment
-from pde_utils.functions import fileio as pde_fileio
-from pde_utils.functions import search
+from pde_utils.functions import multithread
+from pde_utils.functions import pan_handling
+# from pde_utils.functions import fileio as pde_fileio
+# from pde_utils.functions import search
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
 DEFAULT_FOLDER_NAME = f"{time.strftime('%Y%m%d')}_pan"
-DEFAULT_FOLDER_PATH = Path.cwd()
-
-NETWORKX_FILE_TYPES = ["csv", "gexf", "gpickle", "graphml", "al", "nl",
-                       "json", "cyjs", "yaml", "pajek", "shp"]
-EDGE_WEIGHTS = ["DB", "Distance"]
 
 # MAIN FUNCTIONS
 # -----------------------------------------------------------------------------
@@ -31,15 +32,20 @@ EDGE_WEIGHTS = ["DB", "Distance"]
 def main(unparsed_args_list):
     args = parse_build_pan(unparsed_args_list)
 
-    alchemist = pipelines_basic.build_alchemist(args.database)
+    config = configfile.build_complete_config(args.config_file)
+
+    alchemist = pipelines_basic.build_alchemist(args.database, config=config)
+
     values = pipelines_basic.parse_value_input(args.input)
 
-    execute_build_pan(alchemist, args.hhsuite_database, args.folder_path,
-                      args.folder_name, values=values, verbose=args.verbose,
+    execute_build_pan(alchemist, args.hhsuite_database,
+                      folder_path=args.folder_path,
+                      folder_name=args.folder_name,
+                      values=values, verbose=args.verbose,
                       filters=args.filters, groups=args.groups,
                       threads=args.number_threads, M=args.min_percent_gaps,
                       aI=args.avg_identity, mI=args.min_identity,
-                      B=args.DB_stiffness, file_format=args.file_format)
+                      B=args.DB_stiffness)
 
 
 def parse_build_pan(unparsed_args_list):
@@ -51,18 +57,24 @@ def parse_build_pan(unparsed_args_list):
         """
 
     VERBOSE_HELP = """
-        Export option that enables progress print statements.
+        Build PAN option that enables progress print statements.
         """
     FOLDER_PATH_HELP = """
-        Export option to change the path
+        Build PAN option to change the path
         of the directory where the exported files are stored.
             Follow selection argument with the path to the
             desired export directory.
         """
     FOLDER_NAME_HELP = """
-        Export option to change the name
+        Build PAN option to change the name
         of the directory where the exported files are stored.
             Follow selection argument with the desired name.
+        """
+    CONFIG_FILE_HELP = """
+        Build PAN option that enables use of a config file for sourcing
+        credentials
+            Follow selection argument with the path to the config file
+            specifying MySQL and NCBI credentials.
         """
 
     IMPORT_FILE_HELP = """
@@ -112,24 +124,25 @@ def parse_build_pan(unparsed_args_list):
         at a particular column that defines a match state.
             Follow selection argument with the minimum percent gaps [0-100].
         """
-    FILE_FORMAT_HELP = """
-        PAN export option that selects the output file type.
-            Follow selection argument with a valid graph file type.
-    """
+    # FILE_FORMAT_HELP = """
+    #    PAN export option that selects the output file type.
+    #        Follow selection argument with a valid graph file type.
+    # """
 
     parser = argparse.ArgumentParser()
     parser.add_argument("database", type=str,
                         help=DATABASE_HELP)
-    parser.add_argument("hhsuite_database", type=convert_hmm_db_path,
+    parser.add_argument("hhsuite_database", type=Path,
                         help=HHSUITE_DATABASE_HELP)
 
     parser.add_argument("-m", "--folder_name", type=str,
                         help=FOLDER_NAME_HELP)
-    parser.add_argument("-o", "--folder_path",
-                        type=pipelines_basic.convert_dir_path,
+    parser.add_argument("-o", "--folder_path", type=Path,
                         help=FOLDER_PATH_HELP)
     parser.add_argument("-v", "--verbose", action="store_true",
                         help=VERBOSE_HELP)
+    parser.add_argument("-c", "--config_file", help=CONFIG_FILE_HELP,
+                        type=pipelines_basic.convert_file_path)
 
     parser.add_argument("-B", "--DB_stiffness", type=Decimal,
                         help=DB_STIFFNESS_HELP)
@@ -140,16 +153,16 @@ def parse_build_pan(unparsed_args_list):
     parser.add_argument("-M", "--min_percent_gaps", type=int,
                         help=MATCH_STATE_CUTOFF_HELP)
 
-    parser.add_argument("-t", "--file_format", type=str,
-                        choices=NETWORKX_FILE_TYPES,
-                        help=FILE_FORMAT_HELP)
+    # parser.add_argument("-t", "--file_format", type=str,
+    #                    choices=NETWORKX_FILE_TYPES,
+    #                    help=FILE_FORMAT_HELP)
     parser.add_argument("-if", "--import_file",
                         type=pipelines_basic.convert_file_path,
                         help=IMPORT_FILE_HELP, dest="input")
     parser.add_argument("-in", "--import_names", nargs="*",
                         help=IMPORT_NAMES_HELP, dest="input")
 
-    parser.add_argument("-f", "--where", nargs="?",
+    parser.add_argument("-w", "--where", nargs="?",
                         help=WHERE_HELP,
                         dest="filters")
     parser.add_argument("-g", "--group_by", nargs="+",
@@ -158,32 +171,30 @@ def parse_build_pan(unparsed_args_list):
     parser.add_argument("-np", "--number_threads", type=int, nargs="?",
                         help=NUMBER_THREADS_HELP)
 
-    parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME,
-                        folder_path=DEFAULT_FOLDER_PATH,
-                        verbose=False, input=[],
+    parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME, folder_path=None,
+                        config_file=None, verbose=False, input=[],
                         filters="", groups=[],
                         db_name=None, number_threads=1,
-                        DB_stiffness=0.5, avg_identity=20,
-                        min_identity=30,
-                        min_percent_gaps=50, file_format="graphml")
+                        DB_stiffness=0.5, avg_identity=20, min_identity=35,
+                        min_percent_gaps=50)
 
-    parsed_args = parser.parse_args(unparsed_args_list[1:])
+    parsed_args = parser.parse_args(unparsed_args_list[2:])
     return parsed_args
 
 
-def execute_build_pan(alchemist, hhdb_path, folder_path, folder_name,
+def execute_build_pan(alchemist, hhdb_path, pan_name=None,
+                      folder_path=None, folder_name=DEFAULT_FOLDER_NAME,
                       values=None, verbose=False, filters="", groups=[],
-                      threads=1, M=50, aI=20, mI=30, B=0.5, file_format="csv"):
+                      threads=1, M=50, aI=20, mI=35, B=0.5):
     db_filter = pipelines_basic.build_filter(alchemist, "pham", filters,
                                              values=values)
 
-    pan_path = folder_path.joinpath(folder_name)
-    pan_path = basic.make_new_dir(folder_path, pan_path, attempt=50)
+    working_path = pipelines_basic.create_working_path(
+                                            folder_path, folder_name)
 
-    conditionals_map = {}
-    pipelines_basic.build_groups_map(db_filter, pan_path,
-                                     conditionals_map,
-                                     groups=groups, verbose=verbose)
+    conditionals_map = pipelines_basic.build_groups_map(
+                                            db_filter, working_path,
+                                            groups=groups, verbose=verbose)
 
     data_cache = {}
     values = db_filter.values
@@ -198,146 +209,357 @@ def execute_build_pan(alchemist, hhdb_path, folder_path, folder_name,
             print(f"No database entries received for '{mapped_path}'.")
             continue
 
-        base_tmp = mapped_path.joinpath("base_tmp")
-        base_tmp.mkdir()
-        maps_tuple = create_pham_files(alchemist.engine, db_filter.values,
-                                       base_tmp, threads=threads, M=M,
-                                       verbose=verbose)
-        pan = build_pan_base(alchemist, db_filter.values, maps_tuple,
-                             data_cache=data_cache)
+        if pan_name is None:
+            pan_name = folder_name
 
-        nbhd_tmp = mapped_path.joinpath("nbhd_tmp")
-        nbhd_tmp.mkdir()
-        build_pan_neighborhoods(alchemist, pan, nbhd_tmp, aI=aI, mI=mI, B=B,
-                                threads=threads, verbose=verbose,
-                                data_cache=data_cache)
+        pipelines_basic.create_working_dir(mapped_path)
+        pan_path = mapped_path.joinpath(".".join([pan_name, "sqlite"]))
 
-        pde_fileio.write_graph(pan, file_format, mapped_path, folder_name)
+        pan_alchemist = pan_handling.build_pan(pan_path)
+
+        pham_data_dir = mapped_path.joinpath("pham_alns")
+        pham_data_dir.mkdir()
+        data_maps_tuple = create_pham_alns(
+                                        alchemist.engine, db_filter.values,
+                                        pham_data_dir, threads=threads, M=M,
+                                        verbose=verbose, data_cache=data_cache)
+
+        pan_dict = build_pan_nodes(alchemist, pan_alchemist, db_filter.values,
+                                   data_maps_tuple, data_cache=data_cache,
+                                   threads=threads, verbose=verbose)
+
+        cent_data_dir = mapped_path.joinpath("cent_alns")
+        cent_data_dir.mkdir()
+        build_pan_neighborhoods(alchemist, pan_alchemist, pan_dict,
+                                cent_data_dir, data_maps_tuple,
+                                aI=aI, mI=mI, B=B, threads=threads,
+                                verbose=verbose)
 
 
-def create_pham_files(engine, values, aln_dir, threads=1, M=50, verbose=False,
-                      data_cache=None):
+def build_pan_nodes(alchemist, pan_alchemist, values, data_maps_tuple,
+                    data_cache=None, threads=1, verbose=False):
     if data_cache is None:
         data_cache = {}
 
-    fasta_path_map = alignment.create_pham_fasta(engine, values, aln_dir,
-                                                 data_cache=data_cache,
-                                                 threads=threads)
-    aln_path_map = alignment.align_pham_fastas(fasta_path_map, mat_out=True,
-                                               threads=threads, override=True)
-    hmm_path_map = alignment.create_pham_hmms(fasta_path_map, name=True,
-                                              M=M, threads=threads)
+    pan_dict = {}
+    pan_lock = Lock()
+
+    db_lock = Lock()
+
+    work_items = []
+    for pham in values:
+        aln_path = data_maps_tuple[0].get(pham)
+        mat_path = data_maps_tuple[1].get(pham)
+        tree_path = data_maps_tuple[2].get(pham)
+        hmm_path = data_maps_tuple[3].get(pham)
+        pham_genes = data_cache.get(pham)
+
+        work_items.append((alchemist, pan_dict, pham, aln_path, mat_path,
+                           tree_path, hmm_path, pham_genes, pan_lock, db_lock))
+
+    multithread.multithread(build_pan_nodes_threadtask, work_items,
+                            threads=threads)
+
+    if verbose:
+        print("...Writing pham data to PAN...")
+    for cluster in pan_dict.values():
+        pan_alchemist.session.add(cluster)
+
+    pan_alchemist.session.commit()
+    return pan_dict
+
+
+def build_pan_neighborhoods(alchemist, pan_alchemist, pan_dict, data_dir,
+                            data_maps_tuple, aI=20, mI=35, B=0.5,
+                            threads=1, verbose=False):
+    cent_graph = create_centroid_graph(alchemist.engine, pan_dict, data_dir,
+                                       threads=threads, verbose=verbose)
+
+    if verbose:
+        print("...Constructing pham neighborhoods...")
+    identity_edges = []
+    for pham, target_cluster in pan_dict.items():
+        for neighbor, edge_weights in cent_graph[pham].items():
+            if edge_weights["CentroidIdentity"] < aI:
+                continue
+
+            cent_edge = cent_graph[pham][neighbor]
+
+            t_spread = target_cluster.Spread
+
+            local_cluster = pan_dict[neighbor]
+            identity = cent_edge["CentroidIdentity"]
+
+            DBsep = ((t_spread)/(100 - identity))
+            if DBsep >= B:
+                min_identity = cent_edge.get("MinIdentity")
+                if min_identity is None:
+                    min_identity = estimate_min_identity(
+                                       local_cluster, target_cluster, data_dir)
+
+                    cent_edge["MinIdentity"] = min_identity
+
+                if min_identity >= mI:
+                    identity_edges.append(pan_models.IdentityEdge(
+                                Source=neighbor, Target=pham,
+                                DBSeparation=DBsep, CentroidIdentity=identity,
+                                MinIdentity=min_identity))
+
+    if verbose:
+        print("...Writing neighborhood data to PAN...")
+    pan_alchemist.session.add_all(identity_edges)
+    pan_alchemist.session.commit()
+
+
+# HELPER FUNCTIONS
+# -----------------------------------------------------------------------------
+
+
+def create_pham_alns(engine, values, aln_dir, threads=1, M=50, verbose=False,
+                     data_cache=None):
+    if data_cache is None:
+        data_cache = {}
+
+    if verbose:
+        print("...Writing pham fastas...")
+    fasta_path_map = alignment.create_pham_fastas(engine, values, aln_dir,
+                                                  data_cache=data_cache,
+                                                  threads=threads,
+                                                  verbose=verbose)
+
+    if verbose:
+        print("...Aligning pham fastas...")
+    aln_path_map = alignment.align_fastas(fasta_path_map,
+                                          mat_out=True, tree_out=True,
+                                          threads=threads, override=True,
+                                          verbose=verbose)
+
+    if verbose:
+        print("...Calculating pham HMM profiles...")
+    hmm_path_map = alignment.create_hmms(fasta_path_map, name=True,
+                                         M=M, threads=threads,
+                                         verbose=verbose)
 
     mat_path_map = {}
+    tree_path_map = {}
     for pham, aln_path in aln_path_map.items():
-        mat_path = aln_path.with_name(".".join([str(pham), "fasta"]))
+        mat_path = aln_path.with_name(".".join([str(pham), "mat"]))
         mat_path_map[pham] = mat_path
 
-    return (aln_path_map, mat_path_map, hmm_path_map)
+        tree_path = aln_path.with_name(".".join([str(pham), "tree"]))
+        tree_path_map[pham] = tree_path
+
+    return (aln_path_map, mat_path_map, tree_path_map, hmm_path_map)
 
 
-def build_pan_base(alchemist, values, base_maps_tuple, data_cache=None):
-    if data_cache is None:
-        data_cache = {}
+def create_centroid_graph(engine, pan_dict, aln_dir, threads=1, verbose=False):
+    work_items = []
+    fasta_path_map = {}
+    cent_graph = Graph()
+    for pham, cluster in pan_dict.items():
+        fasta_path = aln_dir.joinpath("".join([str(pham), "_cent.fasta"]))
+        fasta_path_map[pham] = fasta_path
 
-    pan = MultiDiGraph()
-    for pham in values:
-        aln_path = base_maps_tuple[0].get(pham)
-        mat_path = base_maps_tuple[1].get(pham)
+        cent_graph.add_node(pham, CentroidID=cluster.CentroidID,
+                            CentroidSeq=cluster.CentroidSeq.decode("utf-8"),
+                            Spread=cluster.Spread)
 
-        aln = clustal.MultipleSequenceAlignment(aln_path, fmt="fasta")
-        aln.parse_alignment()
+        work_items.append(({pham: cluster.CentroidSeq.decode("utf-8")},
+                           fasta_path))
 
-        if not mat_path.is_file():
-            centroid, trunc_centroid_seq = aln.longest_gene()
-            spread = 0
+    if verbose:
+        print("...Writing pham centroid fastas...")
+    multithread.multithread(pdm_fileio.write_fasta, work_items, threads)
+
+    work_items = []
+    for source_pham, source_fasta_path in fasta_path_map.items():
+        for target_pham, target_fasta_path in fasta_path_map.items():
+            if source_pham == target_pham:
+                continue
+
+            cent_edge = cent_graph[source_pham].get(target_pham)
+            if cent_edge is not None:
+                continue
+
+            cent_aln_path = aln_dir.joinpath(
+                                    "".join([str(source_pham), "_",
+                                             str(target_pham), "_cents.aln"]))
+
+            work_items.append((source_fasta_path, target_fasta_path,
+                               cent_aln_path, "needle"))
+            cent_graph.add_edge(source_pham, target_pham)
+
+    if verbose:
+        print("...Aligning pham centroids...")
+    cent_alns = parallelize.parallelize(
+                                work_items, threads, alignment.pairwise_align,
+                                verbose=verbose)
+
+    for cent_aln in cent_alns:
+        identity = (cent_aln.annotations["identity"] /
+                    cent_aln.get_alignment_length()) * 100
+
+        source = alignment[0]
+        target = alignment[0]
+
+        cent_graph[source.id][target.id]["CentroidIdentity"] = identity
+
+    return cent_graph
+
+
+def build_pan_nodes_threadtask(alchemist, pan_dict, pham, aln_path, mat_path,
+                               tree_path, hmm_path, pham_genes,
+                               pan_lock, db_lock):
+    aln = clustal.MultipleSequenceAlignment(aln_path, fmt="fasta")
+    aln.parse_alignment()
+
+    if not mat_path.is_file():
+        mat = None
+        tree = None
+        centroid, trunc_centroid_seq = aln.longest_gene()
+        spread = 0
+    else:
+        mat = clustal.PercentIdentityMatrix(mat_path)
+        mat.parse_matrix()
+        centroid = mat.get_centroid()
+        spread = 100 - mat.get_average_identity(centroid)
+
+        tree = Phylo.read(tree_path, "newick")
+
+    if pham_genes is None:
+        db_lock.acquire()
+        pham_genes = alignment.get_pham_genes(alchemist.engine, pham)
+        db_lock.release()
+
+    centroid_seq = pham_genes.get(centroid)
+
+    pan_lock.acquire()
+    cluster = pan_models.Cluster(pham, Spread=spread, CentroidID=centroid,
+                                 CentroidSeq=centroid_seq.encode("utf-8"),
+                                 MultipleSequenceAlignment=aln,
+                                 PercentIdentityMatrix=mat,
+                                 AlignmentGuidetree=tree)
+    pan_dict[pham] = cluster
+    pan_lock.release()
+
+
+def estimate_min_identity(source_cluster, local_cluster, data_dir):
+    if source_cluster.AlignmentGuidetree is not None:
+        source_linker = estimate_linker_sequence(
+                                    source_cluster, local_cluster.CentroidID,
+                                    local_cluster.CentroidSeq.decode("utf-8"),
+                                    data_dir)
+        source_linker_seq = source_cluster.MultipleSequenceAlignment\
+                                          .get_sequence(source_linker)
+    else:
+        source_linker = source_cluster.CentroidID
+        source_linker_seq = source_cluster.CentroidSeq.decode("utf-8")
+    source_len = len(source_linker_seq)
+
+    if local_cluster.AlignmentGuidetree is not None:
+        target_linker = estimate_linker_sequence(
+                                    local_cluster, source_cluster.CentroidID,
+                                    source_cluster.CentroidSeq.decode("utf-8"),
+                                    data_dir)
+        target_linker_seq = local_cluster.MultipleSequenceAlignment\
+                                         .get_sequence(target_linker)
+    else:
+        target_linker = local_cluster.CentroidID
+        target_linker_seq = local_cluster.CentroidSeq.decode("utf-8")
+    target_len = len(target_linker_seq)
+
+    pairwise_aln_path = data_dir.joinpath("pairwise_linkers.aln")
+
+    source_path = data_dir.joinpath("source_linker.fasta")
+    pdm_fileio.write_fasta({source_linker: source_linker_seq}, source_path)
+
+    target_path = data_dir.joinpath("target_linker.fasta")
+    pdm_fileio.write_fasta({target_linker: target_linker_seq}, target_path)
+
+    linker_alignment = alignment.pairwise_align(
+                                            source_path, target_path,
+                                            pairwise_aln_path, tool="water")
+
+    if source_len < target_len:
+        linker_pid = linker_alignment.annotations["identity"] / source_len
+    else:
+        linker_pid = linker_alignment.annotations["identity"] / target_len
+
+    return linker_pid * 100
+
+
+def estimate_linker_sequence(source_cluster, target_centroid_id,
+                             target_centroid_seq, data_dir):
+    pairwise_aln_path = data_dir.joinpath("pairwise_linkers.aln")
+    guidetree = source_cluster.AlignmentGuidetree
+
+    centroid_path = data_dir.joinpath("centroid.fasta")
+    pdm_fileio.write_fasta({target_centroid_id: target_centroid_seq},
+                           centroid_path)
+
+    curr_node = guidetree.clade
+    while curr_node.is_bifurcating() and len(curr_node.clades) > 1:
+        left_child = curr_node.clades[0]
+        left_seq_path = data_dir.joinpath("left_linker.fasta")
+
+        right_child = curr_node.clades[1]
+        right_seq_path = data_dir.joinpath("right_linker.fasta")
+
+        left_seq_id = get_furthest_sequence(source_cluster, left_child)
+        left_seq = source_cluster.MultipleSequenceAlignment.get_sequence(
+                                                left_seq_id, gaps=False)
+        pdm_fileio.write_fasta({left_seq_id: left_seq}, left_seq_path)
+
+        right_seq_id = get_furthest_sequence(source_cluster, right_child)
+        right_seq = source_cluster.MultipleSequenceAlignment.get_sequence(
+                                                right_seq_id, gaps=False)
+        pdm_fileio.write_fasta({right_seq_id: right_seq}, right_seq_path)
+
+        left_alignment = alignment.pairwise_align(
+                                            left_seq_path, centroid_path,
+                                            pairwise_aln_path, tool="needle")
+        right_alignment = alignment.pairwise_align(
+                                            right_seq_path, centroid_path,
+                                            pairwise_aln_path, tool="needle")
+
+        left_pid = (left_alignment.annotations["identity"] /
+                    left_alignment.get_alignment_length())
+
+        right_pid = (right_alignment.annotations["identity"] /
+                     right_alignment.get_alignment_length())
+
+        if left_pid > right_pid:
+            curr_node = left_child
         else:
-            mat = clustal.PercentIdentityMatrix(mat_path)
-            mat.parse_matrix()
-            centroid = mat.get_centroid()
-            spread = 100 - mat.get_average_identity(centroid)
+            curr_node = right_child
 
-        pham_genes = data_cache.get(pham)
-        if pham_genes is None:
-            pham_genes = alignment.get_pham_genes(alchemist.engine, pham)
-
-        centroid_seq = pham_genes.get(centroid)
-
-        pan.add_node(pham, Spread=spread, CentroidGene=centroid,
-                     CentroidSeq=centroid_seq)
-
-    return pan
+    linker_id = get_furthest_sequence(source_cluster, curr_node)
+    return linker_id
 
 
-def build_pan_neighborhoods(alchemist, pan, tmp_dir, aI=20, mI=30, B=0.5,
-                            threads=1, verbose=False, data_cache=None):
-    if data_cache is None:
-        data_cache = {}
+def get_furthest_sequence(cluster, seq_clade):
+    seq_ids = []
+    for terminal_clade in seq_clade.get_terminals():
+        seq_ids.append(terminal_clade.name)
 
-    centroid_seqs = {}
-    cfasta_path = tmp_dir.joinpath("centroid.fasta")
+    centroid_id = cluster.CentroidID
 
-    pan_dict = dict(pan.nodes(data=True))
-    for pham, pham_data in pan_dict.items():
-        centroid_seqs[pham] = pham_data["CentroidSeq"]
+    furthest_seq_id = centroid_id
+    max_distance = 0
+    for seq_id in seq_ids:
+        distance = cluster.PercentIdentityMatrix.get_distance(centroid_id,
+                                                              seq_id)
+        if furthest_seq_id is None:
+            furthest_seq_id = seq_id
+            max_distance = distance
+            continue
 
-    pdm_fileio.write_fasta(centroid_seqs, cfasta_path)
+        if distance > max_distance:
+            furthest_seq_id = seq_id
+            max_distance = distance
 
-    caln, cmat = align_centroids(cfasta_path, tmp_dir, threads=threads)
+    return furthest_seq_id
 
-    for pham, pham_data in pan_dict.items():
-        centroid = pham_data["CentroidGene"]
-        centroid_seq = pham_data["CentroidSeq"]
-        locals = cmat.get_nearest_neighbors(str(pham), aI)
-
-        neighbors = {}
-        for local in locals:
-            t_spread = pan_dict[int(local)]["Spread"]
-            distance = cmat.get_distance(str(pham), local)
-
-            print(t_spread)
-            print(distance)
-
-            DBsep = ((t_spread)/distance)
-            print(DBsep)
-            if DBsep >= B:
-                neighbors.update({int(local): {"DBsep": t_spread,
-                                               "distance": distance}})
-
-        for neighbor, edge_data in neighbors.items():
-            fasta_path = tmp_dir.joinpath(f"{neighbor}_{pham}cent.fasta")
-            aln_path = tmp_dir.joinpath(f"{neighbor}_{pham}cent.aln")
-            mat_path = tmp_dir.joinpath(f"{neighbor}_{pham}cent.mat")
-
-            pham_genes = data_cache.get(neighbor)
-            if pham_genes is None:
-                pham_genes = alignment.get_pham_genes(
-                                        alchemist.engine, neighbor)
-
-            pham_genes[centroid] = centroid_seq
-            pdm_fileio.write_fasta(pham_genes, fasta_path)
-            alignment.clustalo(fasta_path, aln_path, mat_out_path=mat_path,
-                               threads=threads)
-
-            mat = clustal.PercentIdentityMatrix(mat_path)
-            mat.parse_matrix()
-            min_dist_seqs = mat.get_nearest_neighbors(centroid, mI)
-
-            if min_dist_seqs:
-                closest_gene = min_dist_seqs[0]
-                min_distance = mat.get_distance(centroid, closest_gene)
-
-                pan.add_edge(pham, str(neighbor),
-                             MinDistance=min_distance,
-                             LinkingGene=closest_gene,
-                             Distance=edge_data["distance"],
-                             DBSeparation=edge_data["DBsep"])
-
-    return pan
-
-
-def convert_hmm_db_path(path):
-    return Path(path)
 
 # Methods of clustering centroid sequences
 
@@ -352,6 +574,21 @@ CLUSTER_ARGS = {"tmp_dir": None,
                 "aln_mode": None,
                 "cov_mode": None,
                 "clu_mode": None}
+
+
+def align_centroids(cfasta_path, tmp_dir, threads=1):
+    caln_path = tmp_dir.joinpath("centroid.aln")
+    cmat_path = tmp_dir.joinpath("centroid.mat")
+
+    alignment.clustalo(cfasta_path, caln_path, mat_out_path=cmat_path,
+                       threads=threads)
+
+    caln = clustal.MultipleSequenceAlignment(caln_path)
+    caln.parse_alignment()
+    cmat = clustal.PercentIdentityMatrix(cmat_path)
+    cmat.parse_matrix()
+
+    return caln, cmat
 
 
 def clust_centroids(cfasta_path, aln_dir):
@@ -372,21 +609,6 @@ def clust_centroids(cfasta_path, aln_dir):
                                         pre_nbhds_file)
 
     return pre_neighborhoods
-
-
-def align_centroids(cfasta_path, tmp_dir, threads=1):
-    caln_path = tmp_dir.joinpath("centroid.aln")
-    cmat_path = tmp_dir.joinpath("centroid.mat")
-
-    alignment.clustalo(cfasta_path, caln_path, mat_out_path=cmat_path,
-                       threads=threads)
-
-    caln = clustal.MultipleSequenceAlignment(caln_path)
-    caln.parse_alignment()
-    cmat = clustal.PercentIdentityMatrix(cmat_path)
-    cmat.parse_matrix()
-
-    return caln, cmat
 
 
 def build_centroid_mmseqs_dbs(caln_path, centroid_fasta_map, aln_dir):

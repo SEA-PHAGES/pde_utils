@@ -13,8 +13,6 @@ from pde_utils.functions import alignment
 # -----------------------------------------------------------------------------
 DEFAULT_FOLDER_NAME = f"{time.strftime('%Y%m%d')}_pham_align"
 
-ALIGNMENT_TYPES = ["MSA", "HMM"]
-
 
 # MAIN FUNCTIONS
 # -----------------------------------------------------------------------------
@@ -35,7 +33,8 @@ def main(unparsed_args_list):
     execute_pham_align(alchemist, folder_path=args.folder_path,
                        folder_name=args.folder_name, values=values,
                        filters=args.filters, groups=args.groups,
-                       aln_type=args.alignment_type,
+                       file_type=args.file_type,
+                       mat_out=args.distmat_out, tree_out=args.guidetree_out,
                        verbose=args.verbose, dump=args.dump, force=args.force,
                        threads=args.number_threads)
 
@@ -98,9 +97,15 @@ def parse_pham_align(unparsed_args_list):
                 {Table}.{Column}={Value}
         """
 
-    ALIGNMENT_TYPE_HELP = """
-        Pham align option to change the type of alignment file exported.
+    OUTFILE_TYPE_HELP = """
+        Pham align option to change the format of alignment file exported.
             Follow selection argument with a supported alignment file type.
+        """
+    DISTMAT_OUT_HELP = """
+        Pham align option to toggle on pham distance matrix file generation.
+        """
+    GUIDETREE_OUT_HELP = """
+        Pham align option to toggle on pham guidetree file generation.
         """
 
     parser = argparse.ArgumentParser()
@@ -127,13 +132,17 @@ def parse_pham_align(unparsed_args_list):
     parser.add_argument("-g", "--group_by", nargs="*", help=GROUP_BY_HELP,
                         dest="groups")
 
-    parser.add_argument("-at", "--alignment_type", type=str,
-                        choices=ALIGNMENT_TYPES,
-                        help=ALIGNMENT_TYPE_HELP)
+    parser.add_argument("-ft", "--file_type", type=str,
+                        choices=alignment.CLUSTALO_FORMATS,
+                        help=OUTFILE_TYPE_HELP)
+    parser.add_argument("-mat", "--distmat_out", action="store_true",
+                        help=DISTMAT_OUT_HELP)
+    parser.add_argument("-tree", "--guidetree_out", action="store_true",
+                        help=GUIDETREE_OUT_HELP)
 
     parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME, folder_path=None,
                         config_file=None, input=[], filters="", groups=[],
-                        alignment_type="MSA", number_threads=1)
+                        file_type="fasta", number_threads=1)
 
     args = parser.parse_args(unparsed_args_list[2:])
     return args
@@ -141,7 +150,8 @@ def parse_pham_align(unparsed_args_list):
 
 def execute_pham_align(alchemist, folder_path=None,
                        folder_name=DEFAULT_FOLDER_NAME, values=None,
-                       filters="", groups=[], aln_type="MSA",
+                       filters="", groups=[],
+                       file_type="fasta", mat_out=False, tree_out=False,
                        threads=1, verbose=False, dump=False, force=False):
     """Executes the entirety of the pham align pipeline.
     :param alchemist: A connected and fully built AlchemyHandler object.
@@ -162,8 +172,12 @@ def execute_pham_align(alchemist, folder_path=None,
     :type filters: str
     :param groups: A list of supported MySQL column names to group by.
     :type groups: list[str]
-    :param aln_type: Type of sequence alignment file to export.
-    :type aln_type: str
+    :param file_type: Format type of sequence alignment file to export.
+    :type file_type: str
+    :param mat_out: A boolean to toggle distance matrix file generation.
+    :type mat_out: bool
+    :param tree_out: A boolean to toggle guidetree file generation.
+    :type tree_out: bool
     :param threads: Number of processes to spawn during alignment workflow.
     :type threads: int
     """
@@ -192,14 +206,16 @@ def execute_pham_align(alchemist, folder_path=None,
 
         pipelines_basic.create_working_dir(mapped_path, dump=dump, force=force)
 
-        if aln_type == "MSA":
-            execute_pham_MSA_alignment(alchemist, mapped_path,
-                                       db_filter.values, data_cache=data_cache,
-                                       threads=threads, verbose=verbose)
+    execute_pham_MSA_alignment(alchemist, mapped_path,
+                               db_filter.values, data_cache=data_cache,
+                               file_type=file_type,
+                               mat_out=mat_out, tree_out=tree_out,
+                               threads=threads, verbose=verbose)
 
 
 def execute_pham_MSA_alignment(alchemist, working_dir, phams, data_cache=None,
-                               threads=1, verbose=False):
+                               file_type="fasta", mat_out=False,
+                               tree_out=False, threads=1, verbose=False):
     if data_cache is None:
         data_cache = {}
 
@@ -208,10 +224,12 @@ def execute_pham_MSA_alignment(alchemist, working_dir, phams, data_cache=None,
 
     fasta_path_map = alignment.create_pham_fastas(
                                         alchemist.engine, phams, working_dir,
-                                        data_cache=data_cache, threads=threads,
-                                        verbose=False)
+                                        data_cache=data_cache,
+                                        threads=threads, verbose=verbose)
 
     if verbose:
         print("Aligning pham amino acid sequences...")
-    alignment.align_pham_fastas(fasta_path_map, override=True,
-                                threads=threads, verbose=False)
+    alignment.align_fastas(fasta_path_map, override=True,
+                           mat_out=mat_out, tree_out=tree_out,
+                           file_type=file_type,
+                           threads=threads, verbose=verbose)

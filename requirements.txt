@@ -1,5 +1,7 @@
-pdm_utils==0.8.8
-hhsuite==3.2.0
-hmmer==3.3
-mmh3==2.5.1
 bitarray==1.5.3
+emboss==6.6.0
+hsuite==3.2.0
+mmh3==2.5.1
+pdm_utils==0.8.8
+primer3-py==0.6.1
+psutil==5.7.2
