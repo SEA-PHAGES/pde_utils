@@ -1,3 +1,4 @@
+from pathlib import Path
 import shlex
 from subprocess import Popen, PIPE
 
@@ -123,6 +124,33 @@ def create_water_cline(query_seq_path, target_seq_path, outfile_path,
 
 # MULTIPLE SEQUENCE TOOLS
 # ---------------------------------------------------------------------
+
+
+def mBed(fasta_file, distmat_out):
+    """
+    Runs mBed to generate a k-tuple distance matrix and UPGMA algorithm
+    guidetree.  Infile is expected to be in Fasta multiple sequence format.
+    :param fasta_file: FASTA file containing sequences to be aligned:
+    :type fasta_file: Path
+    :type fasta_file: str
+    :param distmat_out: Desired destination of the mBed distmat
+    :type distmat_out: Path
+    :type distmat_out: str
+    """
+    command = (f"mBed -infile {fasta_file}")
+
+    command = shlex.split(command)
+
+    with Popen(args=command, stdout=PIPE, stderr=PIPE) as process:
+        out, errors = process.communicate()
+
+    default_distmat = Path.cwd().joinpath("distMat.out")
+
+    if isinstance(distmat_out, str):
+        distmat_out = Path(distmat_out)
+
+    default_distmat.replace(distmat_out)
+    return default_distmat
 
 
 def clustalo(fasta_file, aln_out_path, mat_out_path=None, tree_out_path=None,

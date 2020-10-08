@@ -24,14 +24,15 @@ class PercentIdentityMatrix:
         self.__matrix__ = list()
         self.__initialized__ = False
 
-    def parse_matrix(self):
+    def parse_matrix(self, file_type="clustal"):
         """
         Parses pairwise percent identity matrix.
         :return:
         """
         with open(self.__filepath__, "r") as mat:
-            # The first line of the matrix file is the number of genes
-            num_nodes = int(mat.readline())
+            if file_type == "clustal":
+                # The first line of the matrix file is the number of genes
+                num_nodes = int(mat.readline())
             names = list()
             rows = list()
 
@@ -42,12 +43,22 @@ class PercentIdentityMatrix:
                 names.append(line[0])
                 rows.append([float(x) for x in line[1:]])
 
+        if file_type == "mbed":
+            num_nodes = len(names)
+
+            for i in range(len(rows)):
+                curr_row = rows[i]
+                for row in rows[i+1:]:
+                    curr_row.append(row[i])
+
         # Sanity check that we parsed the matrix properly
-        if num_nodes == len(names) == len(rows):
-            self.node_count = num_nodes
-            self.node_names = names
-            self.matrix = rows
-            self.initialized = True
+        if not (num_nodes == len(names) == len(rows)):
+            raise Exception
+
+        self.node_count = num_nodes
+        self.node_names = names
+        self.matrix = rows
+        self.initialized = True
 
     def check_initialization(self, caller):
         """
