@@ -58,33 +58,34 @@ def write_primer_txt_file(primer_pair, file_path):
         filehandle.write(
                 "<pde_utils find_primers analysis>\n"
                 f"Primer penalty rating: {round(primer_pair.rating, 2)}\n"
-                f"Annealing Temp: {primer_pair.annealing_ta}\u00BAC\n\n\n")
+                f"Annealing Temp: {round(primer_pair.annealing_ta, 3)}"
+                "\u00BAC\n\n\n")
 
         filehandle.write(
                      "FORWARD PRIMER\n"
                      "----------------------------------------"
                      "---------------------------------------\n"
-                     f"Melting Temp: {primer_pair.fwd.Tm}\u00BAC\n\n"
+                     f"Melting Temp: {round(primer_pair.fwd.Tm, 3)}\u00BAC\n\n"
                      f"~{primer_pair.start}...\n"
                      f"5'[{primer_pair.fwd.seq}]      3'\n"
-                     f"3' {Seq(primer_pair.fwd.seq).reverse_complement()}"
+                     f"3' {Seq(primer_pair.fwd.seq).complement()}"
                      "...... 5'\n\n"
                      "3' GC clamp:\n"
-                     f"\t\u0394G: {primer_pair.fwd_clamp.dg}\n"
-                     f"\t\u0394H: {primer_pair.fwd_clamp.dh}\n"
-                     f"\t\u0394S: {primer_pair.fwd_clamp.ds}\n\n"
+                     f"\t\u0394G: {round(primer_pair.fwd_clamp.dg, 2)}\n"
+                     f"\t\u0394H: {round(primer_pair.fwd_clamp.dh, 2)}\n"
+                     f"\t\u0394S: {round(primer_pair.fwd_clamp.ds, 2)}\n\n"
                      "Homodimerization:\n"
-                     f"\t\u0394G: {primer_pair.fwd.homodimer.dg}\n"
-                     f"\t\u0394H: {primer_pair.fwd.homodimer.dh}\n"
-                     f"\t\u0394S: {primer_pair.fwd.homodimer.ds}\n\n"
+                     f"\t\u0394G: {round(primer_pair.fwd.homodimer.dg, 2)}\n"
+                     f"\t\u0394H: {round(primer_pair.fwd.homodimer.dh, 2)}\n"
+                     f"\t\u0394S: {round(primer_pair.fwd.homodimer.ds, 2)}\n\n"
                      f"{primer_pair.fwd.homodimer.formatted_structure}\n")
 
         if primer_pair.fwd.hairpin.dg != 0:
             filehandle.write(
                      "\nHairpin Formation:\n"
-                     f"\t\u0394G: {primer_pair.fwd.hairpin.dg}\n"
-                     f"\t\u0394H: {primer_pair.fwd.hairpin.dh}\n"
-                     f"\t\u0394S: {primer_pair.fwd.hairpin.ds}\n\n"
+                     f"\t\u0394G: {round(primer_pair.fwd.hairpin.dg, 2)}\n"
+                     f"\t\u0394H: {round(primer_pair.fwd.hairpin.dh, 2)}\n"
+                     f"\t\u0394S: {round(primer_pair.fwd.hairpin.ds, 2)}\n\n"
                      f"{primer_pair.fwd.hairpin.structure}\n")
 
         filehandle.write("\n\n")
@@ -93,28 +94,28 @@ def write_primer_txt_file(primer_pair, file_path):
                      "REVERSE PRIMER\n"
                      "----------------------------------------"
                      "---------------------------------------\n"
-                     f"Melting Temp: {primer_pair.rvs.Tm}\u00BAC\n\n"
+                     f"Melting Temp: {round(primer_pair.rvs.Tm, 3)}\u00BAC\n\n"
                      f"...~{primer_pair.start + len(primer_pair.product)}\n"
                      f"5'     [{primer_pair.rvs.seq}] 3'\n"
-                     f"3'......{Seq(primer_pair.rvs.seq).reverse_complement()}"
+                     f"3'......{Seq(primer_pair.rvs.seq).complement()}"
                      "  5\n\n"
                      "3' GC clamp:\n"
-                     f"\t\u0394G: {primer_pair.rvs_clamp.dg}\n"
-                     f"\t\u0394H: {primer_pair.rvs_clamp.dh}\n"
-                     f"\t\u0394S: {primer_pair.rvs_clamp.ds}\n\n"
+                     f"\t\u0394G: {round(primer_pair.rvs_clamp.dg, 2)}\n"
+                     f"\t\u0394H: {round(primer_pair.rvs_clamp.dh, 2)}\n"
+                     f"\t\u0394S: {round(primer_pair.rvs_clamp.ds, 2)}\n\n"
                      "Homodimerization:\n"
-                     f"\t\u0394G: {primer_pair.rvs.homodimer.dg}\n"
-                     f"\t\u0394H: {primer_pair.rvs.homodimer.dh}\n"
-                     f"\t\u0394S: {primer_pair.rvs.homodimer.ds}\n\n"
+                     f"\t\u0394G: {round(primer_pair.rvs.homodimer.dg, 2)}\n"
+                     f"\t\u0394H: {round(primer_pair.rvs.homodimer.dh, 2)}\n"
+                     f"\t\u0394S: {round(primer_pair.rvs.homodimer.ds, 2)}\n\n"
                      f"{primer_pair.rvs.homodimer.formatted_structure}\n")
 
         if primer_pair.rvs.hairpin.dg != 0:
             filehandle.write(
                      "\n"
                      "Hairpin Formation:\n"
-                     f"\t\u0394G: {primer_pair.rvs.hairpin.dg}\n"
-                     f"\t\u0394H: {primer_pair.rvs.hairpin.dh}\n"
-                     f"\t\u0394S: {primer_pair.rvs.hairpin.ds}\n\n"
+                     f"\t\u0394G: {round(primer_pair.rvs.hairpin.dg, 2)}\n"
+                     f"\t\u0394H: {round(primer_pair.rvs.hairpin.dh, 2)}\n"
+                     f"\t\u0394S: {round(primer_pair.rvs.hairpin.ds, 2)}\n\n"
                      f"{primer_pair.rvs.hairpin.structure}\n")
 
         filehandle.write("\n\n")
@@ -124,18 +125,18 @@ def write_primer_txt_file(primer_pair, file_path):
                     "----------------------------------------"
                     "---------------------------------------\n"
                     "Forward/Reverse Dimerization:\n"
-                    f"\t\u0394G: {primer_pair.heterodimer.dg}\n"
-                    f"\t\u0394H: {primer_pair.heterodimer.dh}\n"
-                    f"\t\u0394S: {primer_pair.heterodimer.ds}\n\n"
+                    f"\t\u0394G: {round(primer_pair.heterodimer.dg, 2)}\n"
+                    f"\t\u0394H: {round(primer_pair.heterodimer.dh, 2)}\n"
+                    f"\t\u0394S: {round(primer_pair.heterodimer.ds, 2)}\n\n"
                     f"{primer_pair.heterodimer.formatted_structure}\n\n")
 
         if primer_pair.fwd_antisense_heterodimer.structure_lines:
             heterodimer = primer_pair.fwd_antisense_heterodimer
             filehandle.write(
                     "Forward/Antisense Internal Mispriming:\n"
-                    f"\t\u0394G: {heterodimer.dg}\n"
-                    f"\t\u0394H: {heterodimer.dh}\n"
-                    f"\t\u0394S: {heterodimer.ds}\n"
+                    f"\t\u0394G: {round(heterodimer.dg, 2)}\n"
+                    f"\t\u0394H: {round(heterodimer.dh, 2)}\n"
+                    f"\t\u0394S: {round(heterodimer.ds, 2)}\n"
                     "\n"
                     f"{heterodimer.reduced_structure}\n")
 
@@ -143,9 +144,9 @@ def write_primer_txt_file(primer_pair, file_path):
             heterodimer = primer_pair.rvs_antisense_heterodimer
             filehandle.write(
                     "Reverse/Antisense Mispriming:\n"
-                    f"\t\u0394G: {heterodimer.dg}\n"
-                    f"\t\u0394H: {heterodimer.dh}\n"
-                    f"\t\u0394S: {heterodimer.ds}\n"
+                    f"\t\u0394G: {round(heterodimer.dg, 2)}\n"
+                    f"\t\u0394H: {round(heterodimer.dh, 2)}\n"
+                    f"\t\u0394S: {round(heterodimer.ds, 2)}\n"
                     "\n"
                     f"{heterodimer.reduced_structure}\n")
 
@@ -153,9 +154,9 @@ def write_primer_txt_file(primer_pair, file_path):
             heterodimer = primer_pair.fwd_sense_heterodimer
             filehandle.write(
                     "Forward/Sense Mispriming:\n"
-                    f"\t\u0394G: {heterodimer.dg}\n"
-                    f"\t\u0394H: {heterodimer.dh}\n"
-                    f"\t\u0394S: {heterodimer.ds}\n"
+                    f"\t\u0394G: {round(heterodimer.dg, 2)}\n"
+                    f"\t\u0394H: {round(heterodimer.dh, 2)}\n"
+                    f"\t\u0394S: {round(heterodimer.ds, 2)}\n"
                     "\n"
                     f"{heterodimer.reduced_structure}\n")
 
@@ -163,9 +164,9 @@ def write_primer_txt_file(primer_pair, file_path):
             heterodimer = primer_pair.fwd_sense_heterodimer
             filehandle.write(
                     "Reverse/Sense Internal Mispriming:\n"
-                    f"\t\u0394G: {heterodimer.dg}\n"
-                    f"\t\u0394H: {heterodimer.dh}\n"
-                    f"\t\u0394S: {heterodimer.ds}\n"
+                    f"\t\u0394G: {round(heterodimer.dg, 2)}\n"
+                    f"\t\u0394H: {round(heterodimer.dh, 2)}\n"
+                    f"\t\u0394S: {round(heterodimer.ds, 2)}\n"
                     "\n"
                     f"{heterodimer.reduced_structure}\n")
 

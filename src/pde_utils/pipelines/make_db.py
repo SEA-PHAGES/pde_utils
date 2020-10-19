@@ -8,7 +8,9 @@ from psutil import cpu_count
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, Popen
 from pdm_utils.functions import pipelines_basic
+from pdm_utils.functions import phameration
 
+from pde_utils.classes import clustal
 from pde_utils.functions import alignment
 
 # GLOBAL VARIABLES
@@ -406,6 +408,69 @@ def verify_hhsuite_database(db_dir, db_name, threads=1, stdout=None):
 
 # MMSEQS DB HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
+
+CLUSTER_ARGS = {"tmp_dir": None,
+                "identity": None,
+                "coverage": None,
+                "e_value": None,
+                "sens": None,
+                "steps": None,
+                "threads": None,
+                "aln_mode": None,
+                "cov_mode": None,
+                "clu_mode": None}
+
+
+def align_centroids(cfasta_path, tmp_dir, threads=1):
+    caln_path = tmp_dir.joinpath("centroid.aln")
+    cmat_path = tmp_dir.joinpath("centroid.mat")
+
+    alignment.clustalo(cfasta_path, caln_path, mat_out_path=cmat_path,
+                       threads=threads)
+
+    caln = clustal.MultipleSequenceAlignment(caln_path)
+    caln.parse_alignment()
+    cmat = clustal.PercentIdentityMatrix(cmat_path)
+    cmat.parse_matrix()
+
+    return caln, cmat
+
+
+def clust_centroids(cfasta_path, aln_dir):
+    db_dir = aln_dir.joinpath("DB_tmp")
+    db_dir.mkdir()
+
+    seq_db = db_dir.joinpath("sequenceDB")
+    clu_db = db_dir.joinpath("clusterDB")
+    psf_db = db_dir.joinpath("seqfileDB")
+    pre_nbhds_file = aln_dir.joinpath("pre_nbhds.fasta")
+
+    phameration.mmseqs_createdb(cfasta_path, seq_db)
+    phameration.mmseqs_cluster(seq_db, clu_db, CLUSTER_ARGS)
+    phameration.mmseqs_createseqfiledb(seq_db, clu_db, psf_db)
+    phameration.mmseqs_result2flat(seq_db, seq_db, psf_db,
+                                   pre_nbhds_file)
+    pre_neighborhoods = phameration.parse_mmseqs_output(
+                                        pre_nbhds_file)
+
+    return pre_neighborhoods
+
+
+def build_centroid_mmseqs_dbs(caln_path, centroid_fasta_map, aln_dir):
+    database_dir = aln_dir.joinpath("mmdb")
+    database_dir.mkdir()
+
+    total_centroid_db = database_dir.joinpath("centroidDB")
+    phameration.mmseqs_createdb(caln_path, total_centroid_db)
+
+    centroid_db_map = {}
+    for pham, centroid_fasta in centroid_fasta_map.items():
+        centroid_db = database_dir.joinpath(f"{pham}centroidDB")
+
+        phameration.mmseqs_createdb(centroid_fasta, centroid_db)
+        centroid_db_map[pham] = centroid_db
+
+    return total_centroid_db, centroid_db_map
 
 
 if __name__ == "__main__":

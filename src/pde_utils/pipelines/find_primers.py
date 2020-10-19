@@ -350,7 +350,8 @@ def execute_find_primers(alchemist, folder_path=None,
     :param phams_in: Phams to evaluate during count min sketch eval of kmers
     :type phams_in: list[str]
     """
-    db_filter = pipelines_basic.build_filter(alchemist, "phage", filters)
+    db_filter = pipelines_basic.build_filter(alchemist, "phage", filters,
+                                             values=values)
 
     working_path = pipelines_basic.create_working_path(
                                                     folder_path, folder_name)
@@ -441,7 +442,7 @@ def execute_find_primers(alchemist, folder_path=None,
             print(f"...Testing primer pairs for '{mapped_path}'...")
         primer_pairs = test_primer_pairs(primer_pairs, genome_map,
                                          threads=threads, verbose=verbose,
-                                         het_min=het_min,
+                                         minD=minD, maxD=maxD, het_min=het_min,
                                          ta_min=ta_min, ta_max=ta_max,
                                          tm_gap_max=tm_gap)
 
@@ -1044,7 +1045,7 @@ def build_pham_gene_map(db_filter, conditionals, phams_in=[], verbose=False):
 
     pham_gene_map = {}
     for pham in phams:
-        pham_conditionals = conditionals + [(pham_col == pham)]
+        pham_conditionals = [(pham_col == pham)]
 
         gene_values = db_filter.build_values(column=gene_col,
                                              where=pham_conditionals)

@@ -1,9 +1,12 @@
+from Bio import Phylo
 from networkx import MultiDiGraph
 from pdm_utils import AlchemyHandler
-from sqlalchemy import create_engine, MetaData
+from pdm_utils.functions import querying
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from pde_utils.classes import pan_models
+from pde_utils.classes import clustal
+from pde_utils.classes.pan_models import (Base, Cluster)
 
 
 def build_pan_engine(pan_path):
@@ -11,14 +14,6 @@ def build_pan_engine(pan_path):
     engine = create_engine(engine_string)
 
     return engine
-
-
-def build_pan_metadata(engine=None):
-    metadata = MetaData(bind=engine)
-
-    pan_models.map_pan_models(metadata)
-
-    return metadata
 
 
 def build_pan_session(engine):
@@ -29,9 +24,9 @@ def build_pan_session(engine):
 
 def build_pan(pan_path):
     engine = build_pan_engine(pan_path)
-    metadata = build_pan_metadata(engine=engine)
 
-    metadata.create_all()
+    metadata = Base.metadata
+    metadata.create_all(engine)
 
     session = build_pan_session(engine)
 
@@ -51,7 +46,7 @@ def build_pan(pan_path):
 def to_networkx(alchemist):
     pan_graph = MultiDiGraph()
 
-    pan_clusters = alchemist.session.query(pan_models.Cluster).all()
+    pan_clusters = alchemist.session.query(Cluster).all()
     for cluster in pan_clusters:
         pan_graph.add_node(cluster.ClusterID, Spread=cluster.Spread,
                            CentroidID=cluster.CentroidID,
@@ -65,3 +60,50 @@ def to_networkx(alchemist):
                                MinIdentity=identity_edge.MinIdentity)
 
     return pan_graph
+
+
+def retrieve_cluster_data(pan_alchemist, cluster_ids):
+    cluster_table = Cluster.__table__
+
+    query = querying.build_select(
+                        pan_alchemist.graph,
+                        [cluster_table.c.Spread, cluster_table.c.CentroidID,
+                         cluster_table.c.CentroidSeq,
+                         cluster_table.c.ClusterID])
+    results = querying.execute(pan_alchemist.engine, query,
+                               in_column=cluster_table.c.ClusterID,
+                               values=cluster_ids)
+
+    return results
+
+
+def parse_cluster(cluster_id, data_dict=None, MSA_path=None, PIM_path=None,
+                  GT_path=None):
+    aln = None
+    if MSA_path is not None:
+        if MSA_path.is_file():
+            aln = clustal.MultipleSequenceAlignment(MSA_path, fmt="fasta")
+            aln.parse_alignment()
+
+    mat = None
+    tree = None
+    if PIM_path is not None:
+        if PIM_path.is_file():
+            mat = clustal.PercentIdentityMatrix(PIM_path)
+            mat.parse_matrix()
+
+    if GT_path is not None:
+        if GT_path.is_file():
+            tree = Phylo.read(str(GT_path), "newick")
+
+    centroid_id = None
+    centroid_seq = None
+    spread = None
+    if data_dict is not None:
+        centroid_id = data_dict.get("CentroidID")
+        centroid_seq = data_dict.get("CentroidSeq")
+        spread = data_dict.get("Spread")
+
+    return Cluster(ClusterID=cluster_id, CentroidID=centroid_id,
+                   CentroidSeq=centroid_seq, Spread=spread,
+                   MSA=aln, PIM=mat, GT=tree)

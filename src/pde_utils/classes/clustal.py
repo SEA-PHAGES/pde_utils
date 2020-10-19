@@ -301,6 +301,28 @@ class PercentIdentityMatrix:
 
         return fps
 
+    def create_submatrix(self, node_ids):
+        node_nums = []
+        for node_id in node_ids:
+            node_nums.append(self.node_names.index(node_id))
+
+        submatrix = PercentIdentityMatrix(self.__filepath__)
+
+        submatrix_rows = []
+        for source_index in node_nums:
+            node_row = []
+            for target_index in node_nums:
+                node_row.append(self.matrix[source_index][target_index])
+
+            submatrix_rows.append(node_row)
+
+        submatrix.__initialized__ = True
+        submatrix.__node_count__ = len(node_nums)
+        submatrix.__node_names__ = node_ids
+        submatrix.__matrix__ = submatrix_rows
+
+        return submatrix
+
 
 class MultipleSequenceAlignment:
     """
@@ -715,7 +737,7 @@ class FastaMultipleSequence:
         :return: copy of self.__node_names__
         :rtype: list
         """
-        self.check_initialization("node_names")
+        self.check_initialization("sequences")
         return self.__sequences__[:]
 
     @sequences.setter

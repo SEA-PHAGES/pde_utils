@@ -4,6 +4,7 @@ from subprocess import Popen, PIPE
 
 from Bio import AlignIO
 from Bio.Emboss import Applications
+import Levenshtein
 from pdm_utils.functions import fileio as pdm_fileio
 from pdm_utils.functions import mysqldb_basic
 from pdm_utils.functions import parallelize
@@ -27,6 +28,23 @@ CLUSTALO_FORMATS = ["fasta", "clustal", "clustal", "phylip", "selex",
 
 # PAIRWISE ALIGNMENT TOOLS
 # ---------------------------------------------------------------------
+
+
+def calculate_levenshtein(source_str, target_str, identity=False):
+    LD = Levenshtein.distance(source_str, target_str)
+
+    source_len = len(source_str)
+    target_len = len(target_str)
+
+    if source_len > target_len:
+        percent = (LD / source_len) * 100
+    else:
+        percent = (LD / target_len) * 100
+
+    if identity:
+        percent = 100 - percent
+
+    return percent
 
 
 def pairwise_align(query_seq_path, target_seq_path, outfile_path,
