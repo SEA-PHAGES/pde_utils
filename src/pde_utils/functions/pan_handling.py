@@ -56,8 +56,8 @@ def to_networkx(alchemist):
         for identity_edge in cluster.NeighborhoodEdges:
             pan_graph.add_edge(identity_edge.Source, identity_edge.Target,
                                DBSeparation=identity_edge.DBSeparation,
-                               CentroidIdentity=identity_edge.CentroidIdentity,
-                               MinIdentity=identity_edge.MinIdentity)
+                               CentroidDistance=identity_edge.CentroidDistance,
+                               MinDistance=identity_edge.MinDistance)
 
     return pan_graph
 

@@ -12,6 +12,7 @@ from pdm_utils.functions import phameration
 
 from pde_utils.classes import clustal
 from pde_utils.functions import alignment
+from pde_utils.functions import fileio as pde_fileio
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
@@ -260,6 +261,14 @@ def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
     aln_path_map = alignment.align_fastas(
                                         fasta_path_map, override=True,
                                         threads=threads, verbose=verbose)
+
+    name_path_map = {}
+    for pham, path in aln_path_map.items():
+        name_path_map[f"pham{pham}"] = path
+    if verbose:
+        print("Adding names to pham alignments...")
+    pde_fileio.name_comment_files(name_path_map, threads=threads,
+                                  verbose=verbose)
 
     return aln_path_map
 

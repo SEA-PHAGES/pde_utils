@@ -11,6 +11,7 @@ import pickle
 import random
 
 from Bio.Application import ApplicationError
+from pdm_utils.functions import basic
 from pdm_utils.functions import configfile
 from pdm_utils.functions import fileio as pdm_fileio
 from pdm_utils.functions import parallelize
@@ -28,7 +29,7 @@ from pde_utils.functions import search
 TEMP_DIR = Path("/tmp/pde_utils_build_pan_cache")
 DEFAULT_FOLDER_NAME = f"{time.strftime('%Y%m%d')}_pan"
 
-PAN_GRAPH_EDGEWEIGHTS = ["CentroidIdentity", "DBSeparation", "MinIdentity"]
+PAN_GRAPH_EDGEWEIGHTS = ["CentroidDistance", "DBSeparation", "MinDistance"]
 # MAIN FUNCTIONS
 # -----------------------------------------------------------------------------
 
@@ -48,7 +49,7 @@ def main(unparsed_args_list):
                       values=values, verbose=args.verbose,
                       filters=args.filters, groups=args.groups,
                       threads=args.number_threads, M=args.min_percent_gaps,
-                      aI=args.avg_identity, mI=args.min_identity,
+                      aD=args.avg_distance, mD=args.min_distance,
                       B=args.DB_stiffness, PANgraph_out=args.PANgraph_out)
 
 
@@ -112,15 +113,15 @@ def parse_build_pan(unparsed_args_list):
         value required to make a connection.
             Follow seelction argument with the DB stiffness parameter [0-1].
         """
-    AVG_IDENTITY_HELP = """
-        PAN building option that controls the initial centroid identity cutoff
+    AVG_DISTANCE_HELP = """
+        PAN building option that controls the initial centroid distance cutoff
         between phams during the building of neighborhoods.
             Follow selection argument with the minimum average identity
             [0-100].
         """
-    MIN_IDENTITY_HELP = """
+    MIN_DISTANCE_HELP = """
         PAN building option that controls the final centroid to target pham
-        identity cutoff between phams during the building of neighborhoods.
+        distance cutoff between phams during the building of neighborhoods.
             Follow selection argument with the minimum identity [0-100].
         """
     MATCH_STATE_CUTOFF_HELP = """
@@ -148,10 +149,10 @@ def parse_build_pan(unparsed_args_list):
 
     parser.add_argument("-B", "--DB_stiffness", type=Decimal,
                         help=DB_STIFFNESS_HELP)
-    parser.add_argument("-aI", "--avg_identity", type=Decimal,
-                        help=AVG_IDENTITY_HELP)
-    parser.add_argument("-mI", "--min_identity", type=Decimal,
-                        help=MIN_IDENTITY_HELP)
+    parser.add_argument("-aD", "--avg_distance", type=Decimal,
+                        help=AVG_DISTANCE_HELP)
+    parser.add_argument("-mD", "--min_distance", type=Decimal,
+                        help=MIN_DISTANCE_HELP)
     parser.add_argument("-M", "--min_percent_gaps", type=int,
                         help=MATCH_STATE_CUTOFF_HELP)
 
@@ -180,7 +181,7 @@ def parse_build_pan(unparsed_args_list):
                         config_file=None, verbose=False, input=[],
                         filters="", groups=[], hhsuite_database=None,
                         db_name=None, number_threads=1,
-                        DB_stiffness=0.2, avg_identity=25, min_identity=35,
+                        DB_stiffness=0.2, avg_distance=75, min_distance=65,
                         min_percent_gaps=50, PANgraph_out=None)
 
     parsed_args = parser.parse_args(unparsed_args_list[2:])
@@ -190,7 +191,7 @@ def parse_build_pan(unparsed_args_list):
 def execute_build_pan(alchemist, hhdb_path=None, pan_name=None,
                       folder_path=None, folder_name=DEFAULT_FOLDER_NAME,
                       values=None, verbose=False, filters="", groups=[],
-                      threads=1, M=50, aI=25, mI=35, B=0.2,
+                      threads=1, M=50, aD=75, mD=65, B=0.2,
                       PANgraph_out=None):
     db_filter = pipelines_basic.build_filter(alchemist, "pham", filters,
                                              values=values)
@@ -237,7 +238,7 @@ def execute_build_pan(alchemist, hhdb_path=None, pan_name=None,
         cent_data_dir.mkdir()
         build_pan_neighborhoods(alchemist, pan_alchemist, db_filter.values,
                                 cent_data_dir, data_maps_tuple,
-                                aI=aI, mI=mI, B=B,
+                                aD=aD, mD=mD, B=B,
                                 threads=threads, verbose=verbose)
 
         hmm_data_dir = mapped_path.joinpath("pham_hhrs")
@@ -291,17 +292,13 @@ def build_pan_nodes(pan_alchemist, values, data_maps_tuple, threads=1,
 
 
 def build_pan_neighborhoods(alchemist, pan_alchemist, values, data_dir,
-                            data_maps_tuple, aI=25, mI=35, B=0.2,
+                            data_maps_tuple, aD=75, mD=65, B=0.2,
                             threads=1, verbose=False):
     matrix_chunks = create_centroid_graph(pan_alchemist, values, data_dir,
-                                          aI=aI, threads=threads,
-                                          verbose=verbose)
-
-    if verbose:
-        print("...Constructing base for pham neighborhoods...")
+                                          threads=threads, verbose=verbose)
 
     thread_manager = multiprocessing.Manager()
-    mI_cache = thread_manager.dict()
+    mD_cache = thread_manager.dict()
     data_cache = thread_manager.dict()
     path_cache = thread_manager.dict()
 
@@ -310,52 +307,13 @@ def build_pan_neighborhoods(alchemist, pan_alchemist, values, data_dir,
 
     read_work_set = set()
     aln_work_items = []
-    for distance_row in matrix_chunks:
-        with distance_row.open(mode="rb") as filehandle:
-            distance_edges = pickle.load(filehandle)
 
-        for edge in distance_edges:
-            identity = edge[2]["CentroidIdentity"]
-            source = edge[0]
-            target = edge[1]
-
-            if source == target:
-                continue
-
-            if identity < aI:
-                continue
-
-            source_node = data_cache.get(source)
-            if source_node is None:
-                source_node = pan_handling.retrieve_cluster_data(
-                                                    pan_alchemist, [source])[0]
-                data_cache[source] = source_node
-            s_spread = source_node["Spread"]
-
-            target_node = data_cache.get(target)
-            if target_node is None:
-                target_node = pan_handling.retrieve_cluster_data(
-                                                    pan_alchemist, [target])[0]
-                data_cache[target] = target_node
-            t_spread = target_node["Spread"]
-
-            if identity > 50:
-                print(f"......{source} and {target} seem too friendly...")
-
-            fwd_DBsep = (t_spread/(100 - identity))
-            rvs_DBsep = (s_spread/(100 - identity))
-            if fwd_DBsep >= B or rvs_DBsep >= B:
-                read_work_set.add(source)
-                read_work_set.add(target)
-
-                if fwd_DBsep >= B:
-                    aln_work_items.append((
-                            source, target, identity, fwd_DBsep, mI, temp_dir,
-                            data_dir, data_cache, mI_cache, path_cache))
-                if rvs_DBsep >= B:
-                    aln_work_items.append((
-                            target, source, identity, rvs_DBsep, mI, temp_dir,
-                            data_dir, data_cache, mI_cache, path_cache))
+    if verbose:
+        print("...Constructing base for pham neighborhoods...")
+    construct_neighborhood_base(pan_alchemist, matrix_chunks,
+                                read_work_set, aln_work_items, data_dir,
+                                temp_dir, mD_cache, data_cache, path_cache,
+                                aD, mD, B)
 
     if verbose:
         print("...Reloading pham neighborhood cluster data...")
@@ -364,12 +322,17 @@ def build_pan_neighborhoods(alchemist, pan_alchemist, values, data_dir,
                                data_maps_tuple[1].get(int(cluster)),
                                data_maps_tuple[2].get(int(cluster)))
 
+    aln_work_chunks = basic.partition_list(aln_work_items,
+                                           int(math.sqrt(len(aln_work_items))))
     if verbose:
-        print("...Computing pham cluster minimum pairwise distances...")
-    identity_edges = parallelize.parallelize(aln_work_items, threads,
+        print("...Computing pham cluster minimum distances...")
+    identity_edge_chunks = parallelize.parallelize(
+                                             aln_work_chunks, threads,
                                              build_neighborhood_edge_process,
                                              verbose=verbose)
-    identity_edges = [edge for edge in identity_edges if edge is not None]
+    identity_edges = []
+    for chunk in identity_edge_chunks:
+        identity_edges = identity_edges + chunk
 
     if verbose:
         print("...Writing neighborhood data to PAN...")
@@ -431,7 +394,7 @@ def create_pham_alns(engine, values, aln_dir, threads=1, M=50, verbose=False,
     return (aln_path_map, mat_path_map, tree_path_map)
 
 
-def create_centroid_graph(pan_alchemist, clusters, aln_dir, aI=25, threads=1,
+def create_centroid_graph(pan_alchemist, clusters, aln_dir, threads=1,
                           verbose=False):
     thread_manager = multiprocessing.Manager()
     cluster_data = thread_manager.list()
@@ -488,11 +451,62 @@ def create_centroid_graph_process(index, cluster_data):
     return filepath
 
 
-def distance_to_graph(source_id, source_str, target_id, target_str):
-    identity = alignment.calculate_levenshtein(
-                                        source_str, target_str, identity=True)
+def construct_neighborhood_base(pan_alchemist, matrix_chunks,
+                                read_work_set, aln_work_items, data_dir,
+                                temp_dir, mD_cache, data_cache, path_cache,
+                                aD, mD, B):
+    for distance_row in matrix_chunks:
+        with distance_row.open(mode="rb") as filehandle:
+            distance_edges = pickle.load(filehandle)
 
-    return (source_id, target_id, {"CentroidIdentity": identity})
+        for edge in distance_edges:
+            distance = edge[2]["CentroidDistance"]
+            source = edge[0]
+            target = edge[1]
+
+            if source == target:
+                continue
+
+            if distance > aD:
+                continue
+
+            source_node = data_cache.get(source)
+            if source_node is None:
+                source_node = pan_handling.retrieve_cluster_data(
+                                                    pan_alchemist, [source])[0]
+                data_cache[source] = source_node
+            s_spread = source_node["Spread"]
+
+            target_node = data_cache.get(target)
+            if target_node is None:
+                target_node = pan_handling.retrieve_cluster_data(
+                                                    pan_alchemist, [target])[0]
+                data_cache[target] = target_node
+            t_spread = target_node["Spread"]
+
+            if distance < 50:
+                print(f"......{source} and {target} seem too friendly...")
+
+            fwd_DBsep = (t_spread/distance)
+            rvs_DBsep = (s_spread/distance)
+            if fwd_DBsep >= B or rvs_DBsep >= B:
+                read_work_set.add(source)
+                read_work_set.add(target)
+
+                if fwd_DBsep >= B:
+                    aln_work_items.append((
+                            source, target, distance, fwd_DBsep, mD, temp_dir,
+                            data_dir, data_cache, mD_cache, path_cache))
+                if rvs_DBsep >= B:
+                    aln_work_items.append((
+                            target, source, distance, rvs_DBsep, mD, temp_dir,
+                            data_dir, data_cache, mD_cache, path_cache))
+
+
+def distance_to_graph(source_id, source_str, target_id, target_str):
+    distance = alignment.calculate_levenshtein(source_str, target_str)
+
+    return (source_id, target_id, {"CentroidDistance": distance})
 
 
 def build_pan_nodes_threadtask(pan_dict, pham, aln_path, mat_path,
@@ -515,9 +529,20 @@ def write_centroids_threadtask(temp_dir, source_path, target_path,
     pdm_fileio.write_fasta(target_gs_to_ts, target_path)
 
 
-def build_neighborhood_edge_process(source, target, avg_id, DBsep, min_mI,
-                                    temp_dir, data_dir, data_cache, mI_cache,
-                                    path_cache):
+def build_neighborhood_edge_process(work_chunk):
+    identity_edges = []
+
+    for work_item in work_chunk:
+        identity_edge = build_identity_edge(*work_item)
+        if identity_edge is not None:
+            identity_edges.append(identity_edge)
+
+    return identity_edges
+
+
+def build_identity_edge(source, target, avg_dis, DBsep, min_mD,
+                        temp_dir, data_dir, data_cache, mD_cache,
+                        path_cache):
     source_aln_files = path_cache[source]
     source_cluster = pan_handling.parse_cluster(
                             source, data_cache[source], source_aln_files[0],
@@ -530,25 +555,25 @@ def build_neighborhood_edge_process(source, target, avg_id, DBsep, min_mI,
                             target_aln_files[1], target_aln_files[2])
     target_cluster.parse_centroid()
 
-    min_id = get_mI_cache_edge(source, target, mI_cache)
+    min_id = get_mD_cache_edge(source, target, mD_cache)
 
     if min_id is None:
-        min_id = estimate_min_identity(source_cluster, target_cluster,
-                                       temp_dir, data_dir)
+        min_dis = estimate_min_distance(source_cluster, target_cluster,
+                                        temp_dir, data_dir)
 
-        mI_cache[source] = {target: min_id}
+        mD_cache[source] = {target: min_dis}
 
-    if min_id >= min_mI:
+    if min_dis <= min_mD:
         return pan_models.IdentityEdge(
                                 Source=source, Target=target,
-                                CentroidIdentity=avg_id,
+                                CentroidDistance=avg_dis,
                                 DBSeparation=DBsep,
-                                MinIdentity=min_id)
+                                MinDistance=min_dis)
 
 
-def get_mI_cache_edge(source, target, mI_cache):
-    source_node = mI_cache.get(source)
-    target_node = mI_cache.get(source)
+def get_mD_cache_edge(source, target, mD_cache):
+    source_node = mD_cache.get(source)
+    target_node = mD_cache.get(source)
 
     if source_node is not None:
         mI = source_node.get(target)
@@ -562,7 +587,8 @@ def get_mI_cache_edge(source, target, mI_cache):
     return None
 
 
-def estimate_min_identity(source_cluster, target_cluster, temp_dir, data_dir):
+def estimate_min_distance(source_cluster, target_cluster, temp_dir, data_dir,
+                          align=False):
     if source_cluster.GT is not None:
         source_leaf = estimate_linker_sequence(source_cluster,
                                                target_cluster.centroid_seq_str,
@@ -576,12 +602,6 @@ def estimate_min_identity(source_cluster, target_cluster, temp_dir, data_dir):
         source_linker_seq = source_cluster.centroid_seq_str
         source_linker_path = temp_dir.joinpath(".".join([source_linker,
                                                          "fasta"]))
-
-        if not source_linker_path.is_file():
-            pdm_fileio.write_fasta({source_linker: source_linker_seq},
-                                   source_linker_path)
-
-    source_len = len(source_linker_seq)
 
     if target_cluster.GT is not None:
         target_leaf = estimate_linker_sequence(target_cluster,
@@ -597,31 +617,42 @@ def estimate_min_identity(source_cluster, target_cluster, temp_dir, data_dir):
         target_linker_path = temp_dir.joinpath(".".join([target_linker,
                                                          "fasta"]))
 
+    if align:
+        source_len = len(source_linker_seq)
+        target_len = len(target_linker_seq)
+
+        if not source_linker_path.is_file():
+            pdm_fileio.write_fasta({source_linker: source_linker_seq},
+                                   source_linker_path)
+
         if not target_linker_path.is_file():
             pdm_fileio.write_fasta({target_linker: target_linker_seq},
                                    target_linker_path)
 
-    target_len = len(target_linker_seq)
+        pairwise_path = data_dir.joinpath("".join([source_linker, "__",
+                                                   target_linker, ".fasta"]))
 
-    pairwise_path = data_dir.joinpath("".join([source_linker, "__",
-                                               target_linker, ".fasta"]))
-
-    error = True
-    while error:
-        try:
-            linker_alignment = alignment.pairwise_align(
+        error = True
+        while error:
+            try:
+                linker_alignment = alignment.pairwise_align(
                                         source_linker_path, target_linker_path,
                                         pairwise_path, tool="needle")
-            error = False
-        except ApplicationError:
-            time.sleep(0.2)
+                error = False
+            except ApplicationError:
+                time.sleep(0.2)
 
-    if source_len > target_len:
-        linker_pid = linker_alignment.annotations["identity"] / source_len
+        if source_len > target_len:
+            linker_pid = linker_alignment.annotations["identity"] / source_len
+        else:
+            linker_pid = linker_alignment.annotations["identity"] / target_len
+
+        linker_pid = linker_pid * 100
     else:
-        linker_pid = linker_alignment.annotations["identity"] / target_len
+        linker_pid = alignment.calculate_levenshtein(source_linker_seq,
+                                                     target_linker_seq)
 
-    return linker_pid * 100
+    return linker_pid
 
 
 def estimate_linker_sequence(source_cluster, target_centroid_seq, temp_dir):

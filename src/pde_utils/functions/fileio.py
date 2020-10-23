@@ -4,6 +4,8 @@ import textwrap
 from Bio.Seq import Seq
 from networkx import readwrite
 
+from pde_utils.functions import multithread
+
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
 
@@ -187,3 +189,24 @@ def write_primer_txt_file(primer_pair, file_path):
             filehandle.write("\n")
 
         filehandle.write("\n\n")
+
+
+def name_comment_files(path_map, threads=1, verbose=False):
+    work_items = []
+    for pham, path in path_map.items():
+        work_items.append((pham, path))
+
+    multithread.multithread(name_comment_file, work_items,
+                            threads=threads, verbose=verbose)
+
+
+def name_comment_file(name, path):
+    filehandle = path.open(mode="r")
+    aln_data = filehandle.readlines()
+    filehandle.close()
+
+    filehandle = path.open(mode="w")
+    filehandle.write(f"#{name}\n")
+    for line in aln_data:
+        filehandle.write(line)
+    filehandle.close()

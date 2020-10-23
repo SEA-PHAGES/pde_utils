@@ -122,21 +122,21 @@ class IdentityEdge(Base):
     Target = Column("Target", String(15), ForeignKey("cluster.ClusterID"),
                     nullable=False)
     DBSeparation = Column("DBSeparation", Float)
-    CentroidIdentity = Column("CentroidIdentity", Float)
-    MinIdentity = Column("MinIdentity", Float)
+    CentroidDistance = Column("CentroidDistance", Float)
+    MinDistance = Column("MinDistance", Float)
 
     SourceNode = relationship("Cluster", back_populates="NeighborhoodEdges",
                               primaryjoin=SOURCE_NODE_JOIN)
     TargetNode = relationship("Cluster", primaryjoin=TARGET_NODE_JOIN)
 
     def __init__(self, ID=None, Source=None, Target=None, DBSeparation=None,
-                 CentroidIdentity=None, MinIdentity=None):
+                 CentroidDistance=None, MinDistance=None):
         self.ID = ID
         self.Source = Source
         self.Target = Target
         self.DBSeparation = DBSeparation
-        self.CentroidIdentity = CentroidIdentity
-        self.MinIdentity = MinIdentity
+        self.CentroidDistance = CentroidDistance
+        self.MinDistance = MinDistance
 
         self.Source_node = None
         self.Target_node = None

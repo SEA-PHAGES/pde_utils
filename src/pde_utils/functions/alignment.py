@@ -391,7 +391,8 @@ def create_pham_fastas(engine, phams, aln_dir, data_cache=None, threads=1,
 
         work_items.append((gs_to_ts, fasta_path))
 
-    multithread.multithread(pdm_fileio.write_fasta, work_items, threads)
+    multithread.multithread(pdm_fileio.write_fasta, work_items, threads,
+                            verbose=verbose)
 
     return fasta_path_map
 
