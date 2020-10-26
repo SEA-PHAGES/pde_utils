@@ -37,7 +37,8 @@ def main(unparsed_args_list):
     execute_make_db(alchemist, args.folder_path, args.folder_name,
                     args.db_type, values=values, verbose=args.verbose,
                     filters=args.filters, groups=args.groups,
-                    db_name=args.db_name, threads=args.threads)
+                    db_name=args.db_name, threads=args.threads,
+                    use_mpi=args.use_mpi)
 
 
 def parse_make_db(unparsed_args_list):
@@ -94,6 +95,11 @@ def parse_make_db(unparsed_args_list):
             Follow selection argument with number of threads to be used
         """
 
+    MPI_HELP = """
+        Pipeline option that allows for use of ffindex_apply_mpi
+        parallelization.
+        """
+
     parser = argparse.ArgumentParser()
     parser.add_argument("database", type=str, help=DATABASE_HELP)
     parser.add_argument("db_type", type=str, choices=DATABASE_TYPES,
@@ -106,11 +112,13 @@ def parse_make_db(unparsed_args_list):
                         help=FOLDER_PATH_HELP)
     parser.add_argument("-v", "--verbose", action="store_true",
                         help=VERBOSE_HELP)
-
-    parser.add_argument("-dbm", "--database_name", type=str,
-                        help=DATABASE_NAME_HELP)
     parser.add_argument("-np", "--threads", type=int, nargs="?",
                         help=NUMBER_THREADS_HELP)
+
+    parser.add_argument("-n", "--database_name", type=str,
+                        help=DATABASE_NAME_HELP)
+    parser.add_argument("-mpi", "--use_mpi", action="store_true",
+                        help=MPI_HELP)
 
     parser.add_argument("-if", "--import_file",
                         type=pipelines_basic.convert_file_path,
@@ -136,7 +144,7 @@ def parse_make_db(unparsed_args_list):
 
 def execute_make_db(alchemist, folder_path, folder_name, db_type,
                     values=None, verbose=False, filters="", groups=[],
-                    db_name=None, threads=1):
+                    db_name=None, threads=1, use_mpi=False):
     if db_name is None:
         db_name = alchemist.database
 
@@ -170,11 +178,13 @@ def execute_make_db(alchemist, folder_path, folder_name, db_type,
             execute_make_hhsuite_database(alchemist, db_filter.values,
                                           mapped_path, db_name,
                                           data_cache=data_cache,
-                                          threads=threads, verbose=verbose)
+                                          threads=threads, verbose=verbose,
+                                          use_mpi=use_mpi)
 
 
 def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
-                                  data_cache=None, verbose=False, threads=1):
+                                  data_cache=None, verbose=False, threads=1,
+                                  use_mpi=False):
     aln_dir = db_dir.joinpath("pham_alignments")
     aln_dir.mkdir()
 
@@ -187,14 +197,15 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     else:
         stdout = DEVNULL
 
-    physical_cores = cpu_count(logical=False)
+    if use_mpi:
+        physical_cores = cpu_count(logical=False)
 
-    if physical_cores < threads:
-        if verbose:
-            print("Designated process count greater than machine's number of "
-                  "physical cores...\n"
-                  f"STEPPING DOWN TO {physical_cores} PROCESSES")
-        threads = physical_cores
+        if physical_cores < threads:
+            if verbose:
+                print("Designated process count greater than machine's "
+                      "number of physical cores...\n"
+                      f"STEPPING DOWN TO {physical_cores} PROCESSES")
+            threads = physical_cores
 
     if verbose:
         print("Creating multiple sequence ffindex file...")
@@ -203,12 +214,14 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     if verbose:
         print("Condensing multiple sequence ffindex file into a3m file...")
     a3m_fftuple = create_a3m_ffindex(db_dir, db_name, msa_fftuple,
-                                     threads=threads, stdout=stdout)
+                                     threads=threads, stdout=stdout,
+                                     use_mpi=use_mpi)
 
     if verbose:
         print("Creating Hidden Markov Model ffindex file...")
     hmm_fftuple = create_hmm_ffindex(db_dir, db_name, a3m_fftuple,
-                                     threads=threads, stdout=stdout)
+                                     threads=threads, stdout=stdout,
+                                     use_mpi=use_mpi)
 
     if verbose:
         print("Creating cs219 ffindex file...")
@@ -291,19 +304,25 @@ def create_msa_ffindex(fasta_dir, db_dir, db_name, stdout=None):
     return (msa_ffdata, msa_ffindex)
 
 
-def create_a3m_ffindex(db_dir, db_name, msa_fftuple, threads=1, stdout=None):
+def create_a3m_ffindex(db_dir, db_name, msa_fftuple, threads=1, stdout=None,
+                       use_mpi=False):
     if stdout is None:
         stdout = DEVNULL
 
     a3m_ffdata = db_dir.joinpath("".join([db_name, "_a3m.ffdata"]))
     a3m_ffindex = db_dir.joinpath("".join([db_name, "_a3m.ffindex"]))
 
-    os.environ["OMP_NUM_THREADS"] = "1"
-    command = (f"mpirun -np {threads} "
-               f"ffindex_apply_mpi {msa_fftuple[0]} {msa_fftuple[1]} "
-               f"-i {a3m_ffindex} -d {a3m_ffdata} "
+    command = (f"{msa_fftuple[0]} {msa_fftuple[1]} "
+               f"-d {a3m_ffdata} -i {a3m_ffindex} "
                "-- hhconsensus -M 50 -maxres 65535 "
                "-i stdin -oa3m stdout -v 0")
+
+    if use_mpi:
+        os.environ["OMP_NUM_THREADS"] = "1"
+        command = "".join([(f"mpirun -np {threads} ffindex_apply_mpi "),
+                           command])
+    else:
+        command = "".join(["ffindex_apply ", command])
 
     split_command = shlex.split(command)
     with Popen(args=split_command, stdout=stdout, stderr=stdout) as process:
@@ -312,17 +331,24 @@ def create_a3m_ffindex(db_dir, db_name, msa_fftuple, threads=1, stdout=None):
     return (a3m_ffdata, a3m_ffindex)
 
 
-def create_hmm_ffindex(db_dir, db_name, a3m_fftuple, threads=1, stdout=None):
+def create_hmm_ffindex(db_dir, db_name, a3m_fftuple, threads=1, stdout=None,
+                       use_mpi=False):
     if stdout is None:
         stdout = DEVNULL
 
     hmm_ffdata = db_dir.joinpath("".join([db_name, "_hmm.ffdata"]))
     hmm_ffindex = db_dir.joinpath("".join([db_name, "_hmm.ffindex"]))
 
-    command = (f"mpirun -np {threads} ffindex_apply_mpi "
-               f"{a3m_fftuple[0]} {a3m_fftuple[1]} "
+    command = (f"{a3m_fftuple[0]} {a3m_fftuple[1]} "
                f"-i {hmm_ffindex} -d {hmm_ffdata} "
                "-- hhmake -i stdin -o stdout -v 0")
+
+    if use_mpi:
+        os.environ["OMP_NUM_THREADS"] = "1"
+        command = "".join([f"mpirun -np {threads} ffindex_apply_mpi ",
+                           command])
+    else:
+        command = "".join(["ffindex_apply ", command])
 
     split_command = shlex.split(command)
     with Popen(args=split_command, stdout=stdout, stderr=stdout) as process:

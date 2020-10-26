@@ -3,8 +3,7 @@ import textwrap
 
 from Bio.Seq import Seq
 from networkx import readwrite
-
-from pde_utils.functions import multithread
+from pdm_utils.functions import multithread
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
@@ -196,8 +195,8 @@ def name_comment_files(path_map, threads=1, verbose=False):
     for pham, path in path_map.items():
         work_items.append((pham, path))
 
-    multithread.multithread(name_comment_file, work_items,
-                            threads=threads, verbose=verbose)
+    multithread.multithread(work_items, threads, name_comment_file,
+                            verbose=verbose)
 
 
 def name_comment_file(name, path):
