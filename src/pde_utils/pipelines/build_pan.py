@@ -14,12 +14,12 @@ from Bio.Application import ApplicationError
 from pdm_utils.functions import basic
 from pdm_utils.functions import configfile
 from pdm_utils.functions import fileio as pdm_fileio
+from pdm_utils.functions import multithread
 from pdm_utils.functions import parallelize
 from pdm_utils.functions import pipelines_basic
 
 from pde_utils.classes import pan_models
 from pde_utils.functions import alignment
-from pde_utils.functions import multithread
 from pde_utils.functions import pan_handling
 from pde_utils.functions import fileio as pde_fileio
 from pde_utils.functions import search

@@ -6,10 +6,10 @@ from Bio import AlignIO
 from Bio.Emboss import Applications
 import Levenshtein
 from pdm_utils.functions import fileio as pdm_fileio
+from pdm_utils.functions import multithread
 from pdm_utils.functions import mysqldb_basic
 from pdm_utils.functions import parallelize
 
-from pde_utils.functions import multithread
 
 # GLOBAL VARIABLES
 # ----------------------------------------------------------------------
@@ -391,7 +391,7 @@ def create_pham_fastas(engine, phams, aln_dir, data_cache=None, threads=1,
 
         work_items.append((gs_to_ts, fasta_path))
 
-    multithread.multithread(pdm_fileio.write_fasta, work_items, threads,
+    multithread.multithread(work_items, threads, pdm_fileio.write_fasta,
                             verbose=verbose)
 
     return fasta_path_map
