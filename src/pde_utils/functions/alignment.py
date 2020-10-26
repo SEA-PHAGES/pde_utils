@@ -399,26 +399,37 @@ def create_pham_fastas(engine, phams, aln_dir, data_cache=None, threads=1,
 
 def align_fastas(fasta_path_map, mat_out=False, tree_out=False,
                  file_type="fasta", mode="clustalo", override=False,
-                 threads=1, verbose=False):
+                 outdir=None, threads=1, verbose=False):
     verbose_num = 0
 
     work_items = []
     aln_path_map = {}
     for pham, fasta_path in fasta_path_map.items():
-        if override:
-            aln_path = fasta_path
+        if outdir is not None:
+            working_dir = outdir
         else:
-            aln_path = fasta_path.with_name(".".join([str(pham), "aln"]))
+            working_dir = fasta_path.parent
+
+        fasta_path_name = fasta_path.with_suffix("").name
+
+        if override:
+            aln_path = working_dir.joinpath(".".join([fasta_path_name,
+                                                      "fasta"]))
+        else:
+            aln_path = working_dir.joinpath(".".join([fasta_path_name,
+                                                      "aln"]))
 
         aln_path_map[pham] = aln_path
 
         mat_path = None
         if mat_out:
-            mat_path = fasta_path.with_name(".".join([str(pham), "mat"]))
+            mat_path = working_dir.joinpath(".".join([fasta_path_name,
+                                                      "mat"]))
 
         tree_path = None
         if tree_out:
-            tree_path = fasta_path.with_name(".".join([str(pham), "tree"]))
+            tree_path = working_dir.joinpath(".".join([fasta_path_name,
+                                                       "tree"]))
 
         work_items.append((fasta_path, aln_path, mat_path, tree_path,
                           file_type, "fasta", 1, verbose_num))
@@ -433,7 +444,7 @@ def align_fastas(fasta_path_map, mat_out=False, tree_out=False,
     return aln_path_map
 
 
-def create_hmms(aln_path_map, name=False, M=50, seq_id=90,
+def create_hmms(aln_path_map, name=False, outdir=None, M=50, seq_id=90,
                 add_cons=False, seq_lim=None, threads=1, verbose=False):
     verbose_num = 0
 
@@ -441,7 +452,12 @@ def create_hmms(aln_path_map, name=False, M=50, seq_id=90,
     hmm_path_map = {}
     for pham, aln_path in aln_path_map.items():
 
-        hmm_path = aln_path.with_name(".".join([str(pham), "hmm"]))
+        if outdir is not None:
+            hmm_path_name = aln_path.with_suffix(".hmm").name
+            hmm_path = outdir.joinpath(hmm_path_name)
+        else:
+            hmm_path = aln_path.with_suffix(".hmm")
+
         hmm_path_map[pham] = hmm_path
 
         hmm_name = None
