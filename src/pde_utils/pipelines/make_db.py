@@ -1,26 +1,27 @@
 import argparse
-import os
-import shutil
-import shlex
 import sys
 import time
-from psutil import cpu_count
-from pathlib import Path
-from subprocess import DEVNULL, PIPE, Popen
+
+from pdm_utils.functions import fileio as pdm_fileio
+from pdm_utils.functions import querying
+from pdm_utils.functions import mysqldb_basic
 from pdm_utils.functions import pipelines_basic
 from pdm_utils.functions import phameration
+from psutil import cpu_count
 
 from pde_utils.classes import clustal
 from pde_utils.functions import alignment
+from pde_utils.functions import blastdb
 from pde_utils.functions import fileio as pde_fileio
+from pde_utils.functions import hhsuitedb
+
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
 
-DATABASE_TYPES = ["hhsuite", "blastp"]
+DATABASE_TYPES = ["hhsuite", "blast"]
 
 DEFAULT_FOLDER_NAME = f"{time.strftime('%Y%m%d')}_db"
-DEFAULT_FOLDER_PATH = Path.cwd()
 
 PHAM_FASTA_COLUMNS = ["gene.GeneID", "gene.Translation"]
 
@@ -34,11 +35,11 @@ def main(unparsed_args_list):
     alchemist = pipelines_basic.build_alchemist(args.database)
     values = pipelines_basic.parse_value_input(args.input)
 
-    execute_make_db(alchemist, args.folder_path, args.folder_name,
-                    args.db_type, values=values, verbose=args.verbose,
-                    filters=args.filters, groups=args.groups,
-                    db_name=args.db_name, threads=args.threads,
-                    use_mpi=args.use_mpi)
+    execute_make_db(alchemist, args.db_type, folder_path=args.folder_path,
+                    folder_name=args.folder_name, values=values,
+                    verbose=args.verbose, filters=args.filters,
+                    groups=args.groups, db_name=args.db_name,
+                    threads=args.threads, use_mpi=args.use_mpi)
 
 
 def parse_make_db(unparsed_args_list):
@@ -102,51 +103,63 @@ def parse_make_db(unparsed_args_list):
 
     parser = argparse.ArgumentParser()
     parser.add_argument("database", type=str, help=DATABASE_HELP)
-    parser.add_argument("db_type", type=str, choices=DATABASE_TYPES,
-                        help=DATABASE_TYPE_HELP)
 
-    parser.add_argument("-m", "--folder_name", type=str,
-                        help=FOLDER_NAME_HELP)
-    parser.add_argument("-o", "--folder_path",
-                        type=pipelines_basic.convert_dir_path,
-                        help=FOLDER_PATH_HELP)
-    parser.add_argument("-v", "--verbose", action="store_true",
-                        help=VERBOSE_HELP)
-    parser.add_argument("-np", "--threads", type=int, nargs="?",
-                        help=NUMBER_THREADS_HELP)
+    subparsers = parser.add_subparsers(dest="db_type", help=DATABASE_TYPE_HELP)
 
-    parser.add_argument("-n", "--database_name", type=str,
-                        help=DATABASE_NAME_HELP)
-    parser.add_argument("-mpi", "--use_mpi", action="store_true",
-                        help=MPI_HELP)
+    hhsuite_parser = subparsers.add_parser("hhsuite")
+    blast_parser = subparsers.add_parser("blast")
 
-    parser.add_argument("-if", "--import_file",
-                        type=pipelines_basic.convert_file_path,
-                        help=IMPORT_FILE_HELP, dest="input")
-    parser.add_argument("-in", "--import_names", nargs="*",
-                        help=IMPORT_NAMES_HELP, dest="input")
-    parser.add_argument("-w", "--where", nargs="?",
-                        help=WHERE_HELP,
-                        dest="filters")
-    parser.add_argument("-g", "--group_by", nargs="+",
-                        help=GROUP_BY_HELP,
-                        dest="groups")
+    hhsuite_parser.add_argument("-np", "--threads", type=int, nargs="?",
+                                help=NUMBER_THREADS_HELP)
+    hhsuite_parser.add_argument("-mpi", "--use_mpi", action="store_true",
+                                help=MPI_HELP)
 
-    parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME,
-                        folder_path=DEFAULT_FOLDER_PATH,
-                        verbose=False, input=[],
-                        filters="", groups=[],
-                        db_name=None, threads=1)
+    blast_parser
+
+    for subparser in [hhsuite_parser, blast_parser]:
+        subparser.add_argument("-m", "--folder_name", type=str,
+                               help=FOLDER_NAME_HELP)
+        subparser.add_argument("-o", "--folder_path",
+                               type=pipelines_basic.convert_dir_path,
+                               help=FOLDER_PATH_HELP)
+        subparser.add_argument("-v", "--verbose", action="store_true",
+                               help=VERBOSE_HELP)
+
+        subparser.add_argument("-n", "--database_name", type=str,
+                               help=DATABASE_NAME_HELP)
+
+        subparser.add_argument("-if", "--import_file",
+                               type=pipelines_basic.convert_file_path,
+                               help=IMPORT_FILE_HELP, dest="input")
+        subparser.add_argument("-in", "--import_names", nargs="*",
+                               help=IMPORT_NAMES_HELP, dest="input")
+        subparser.add_argument("-w", "--where", nargs="?",
+                               help=WHERE_HELP,
+                               dest="filters")
+        subparser.add_argument("-g", "--group_by", nargs="+",
+                               help=GROUP_BY_HELP, dest="groups")
+
+        subparser.set_defaults(folder_name=DEFAULT_FOLDER_NAME,
+                               folder_path=None, verbose=False, input=[],
+                               filters="", groups=[],
+                               db_name=None, threads=1, use_mpi=False)
 
     parsed_args = parser.parse_args(unparsed_args_list[2:])
     return parsed_args
 
 
-def execute_make_db(alchemist, folder_path, folder_name, db_type,
-                    values=None, verbose=False, filters="", groups=[],
-                    db_name=None, threads=1, use_mpi=False):
+def execute_make_db(alchemist, db_type, values=None, folder_path=None,
+                    folder_name=DEFAULT_FOLDER_NAME, verbose=False, filters="",
+                    groups=[], db_name=None, threads=1, use_mpi=False,
+                    mol_type=None, hash_index=False, parse_seqids=True,
+                    gi_mask=False, mask_data=None, mask_id=None, logfile=None,
+                    tax_id=None, tax_id_map=None):
     if db_name is None:
         db_name = alchemist.database
+
+    if verbose:
+        print("Retrieving database version...")
+    db_version = mysqldb_basic.get_first_row_data(alchemist.engine, "version")
 
     db_filter = pipelines_basic.build_filter(alchemist, "pham", filters,
                                              values=values,
@@ -176,13 +189,21 @@ def execute_make_db(alchemist, folder_path, folder_name, db_type,
 
         if db_type == "hhsuite":
             execute_make_hhsuite_database(alchemist, db_filter.values,
-                                          mapped_path, db_name,
+                                          mapped_path, db_name, db_version,
                                           data_cache=data_cache,
                                           threads=threads, verbose=verbose,
                                           use_mpi=use_mpi)
+        elif db_type == "blast":
+            execute_make_blast_database(
+                    alchemist, db_filter.values, mapped_path, db_name,
+                    db_version, data_cache=data_cache, verbose=verbose,
+                    hash_index=False, parse_seqids=True, gi_mask=False,
+                    mask_data=None, mask_id=None, logfile=None, tax_id=None,
+                    tax_id_map=None)
 
 
 def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
+                                  db_version,
                                   data_cache=None, verbose=False, threads=1,
                                   use_mpi=False):
     aln_dir = db_dir.joinpath("pham_alignments")
@@ -191,11 +212,6 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
     create_pham_alignments(
                     alchemist, values, aln_dir, data_cache=data_cache,
                     threads=threads, verbose=verbose)
-
-    if verbose:
-        stdout = PIPE
-    else:
-        stdout = DEVNULL
 
     if use_mpi:
         physical_cores = cpu_count(logical=False)
@@ -207,40 +223,24 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
                       f"STEPPING DOWN TO {physical_cores} PROCESSES")
             threads = physical_cores
 
-    if verbose:
-        print("Creating multiple sequence ffindex file...")
-    msa_fftuple = create_msa_ffindex(aln_dir, db_dir, db_name, stdout=stdout)
+    hhsuitedb.create_hhsuitedb(aln_dir, db_dir, db_name, threads=threads,
+                               verbose=verbose, pham_versions=db_version)
 
-    if verbose:
-        print("Condensing multiple sequence ffindex file into a3m file...")
-    a3m_fftuple = create_a3m_ffindex(db_dir, db_name, msa_fftuple,
-                                     threads=threads, stdout=stdout,
-                                     use_mpi=use_mpi)
 
-    if verbose:
-        print("Creating Hidden Markov Model ffindex file...")
-    hmm_fftuple = create_hmm_ffindex(db_dir, db_name, a3m_fftuple,
-                                     threads=threads, stdout=stdout,
-                                     use_mpi=use_mpi)
+def execute_make_blast_database(alchemist, values, db_dir, db_name, db_version,
+                                mol_type="prot", data_cache={}, verbose=False,
+                                hash_index=False, parse_seqids=True,
+                                gi_mask=False, mask_data=None, mask_id=None,
+                                logfile=None, tax_id=None, tax_id_map=None):
+    fasta_path = create_genes_fasta(alchemist, values, db_dir, db_name,
+                                    mol_type=mol_type, verbose=verbose,
+                                    data_cache=data_cache)
 
-    if verbose:
-        print("Creating cs219 ffindex file...")
-    create_cs219_ffindex(db_dir, db_name, stdout=stdout)
-
-    if verbose:
-        print("Sorting ffindex files for fast database indexing...")
-    sorting_file = create_sorting_file(db_dir, db_name, stdout=stdout)
-    sort_a3m_ffindex(db_dir, db_name, sorting_file, a3m_fftuple, stdout=stdout)
-    sort_hmm_ffindex(db_dir, db_name, sorting_file, hmm_fftuple, stdout=stdout)
-
-    msa_fftuple[0].unlink()
-    msa_fftuple[1].unlink()
-    sorting_file.unlink()
-
-    if not verify_hhsuite_database(db_dir, db_name):
-        print(f"Inconsistencies detected in HHsuite database "
-              f"at '{db_dir}'.\n  Scrapping database.")
-        shutil.rmtree(db_dir)
+    blastdb.create_blastdb(fasta_path, db_dir, db_name, mol_type=mol_type,
+                           hash_index=hash_index, parse_seqids=parse_seqids,
+                           gi_mask=gi_mask, mask_data=mask_data,
+                           mask_id=mask_id, logfile=logfile, tax_id=tax_id,
+                           tax_id_map=tax_id_map, pham_versions=db_version)
 
 
 def execute_make_mmseqs_database(alchemist, values, db_dir, db_name,
@@ -248,15 +248,8 @@ def execute_make_mmseqs_database(alchemist, values, db_dir, db_name,
     pass
 
 
-def execute_make_blast_protein_database(
-                                    alchemist, values, db_dir, db_name,
-                                    data_cache=None, verbose=False, threads=1):
-    pass
-
 # HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
-
-
 def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
                            threads=1, verbose=False):
     if data_cache is None:
@@ -286,163 +279,37 @@ def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
     return aln_path_map
 
 
-# HHSUITE DB HELPER FUNCTIONS
-# -----------------------------------------------------------------------------
-def create_msa_ffindex(fasta_dir, db_dir, db_name, stdout=None):
-    if stdout is None:
-        stdout = DEVNULL
+def create_genes_fasta(alchemist, values, fasta_dir, db_name,
+                       mol_type="prot", verbose=False, data_cache=None):
+    if data_cache is None:
+        data_cache = {}
 
-    msa_ffdata = db_dir.joinpath("".join([db_name, "_msa.ffdata"]))
-    msa_ffindex = db_dir.joinpath("".join([db_name, "_msa.ffindex"]))
+    fasta_path = fasta_dir.joinpath(".".join([db_name, "fasta"]))
 
-    command = f"ffindex_build -s {msa_ffdata} {msa_ffindex} {fasta_dir}"
+    gs_to_ts = map_translations(alchemist, values)
 
-    split_command = shlex.split(command)
-    with Popen(args=split_command, stdout=stdout, stderr=stdout) as process:
-        out, errors = process.communicate()
+    pdm_fileio.write_fasta(gs_to_ts, fasta_path)
 
-    return (msa_ffdata, msa_ffindex)
+    return fasta_path
 
 
-def create_a3m_ffindex(db_dir, db_name, msa_fftuple, threads=1, stdout=None,
-                       use_mpi=False):
-    if stdout is None:
-        stdout = DEVNULL
+def map_translations(alchemist, pham_ids):
+    gene = alchemist.metadata.tables["gene"]
 
-    a3m_ffdata = db_dir.joinpath("".join([db_name, "_a3m.ffdata"]))
-    a3m_ffindex = db_dir.joinpath("".join([db_name, "_a3m.ffindex"]))
+    pham_id = gene.c.PhamID
+    gene_id = gene.c.GeneID
+    translation = gene.c.Translation
 
-    command = (f"{msa_fftuple[0]} {msa_fftuple[1]} "
-               f"-d {a3m_ffdata} -i {a3m_ffindex} "
-               "-- hhconsensus -M 50 -maxres 65535 "
-               "-i stdin -oa3m stdout -v 0")
+    query = querying.build_select(alchemist.graph, [gene_id, translation])
+    results = querying.execute(alchemist.engine, query, in_column=pham_id,
+                               values=pham_ids)
 
-    if use_mpi:
-        os.environ["OMP_NUM_THREADS"] = "1"
-        command = "".join([(f"mpirun -np {threads} ffindex_apply_mpi "),
-                           command])
-    else:
-        command = "".join(["ffindex_apply ", command])
+    gs_to_ts = {}
+    for result in results:
+        gs_to_ts[result["GeneID"]] = result["Translation"].decode("utf-8")
 
-    split_command = shlex.split(command)
-    with Popen(args=split_command, stdout=stdout, stderr=stdout) as process:
-        out, errors = process.communicate()
+    return gs_to_ts
 
-    return (a3m_ffdata, a3m_ffindex)
-
-
-def create_hmm_ffindex(db_dir, db_name, a3m_fftuple, threads=1, stdout=None,
-                       use_mpi=False):
-    if stdout is None:
-        stdout = DEVNULL
-
-    hmm_ffdata = db_dir.joinpath("".join([db_name, "_hmm.ffdata"]))
-    hmm_ffindex = db_dir.joinpath("".join([db_name, "_hmm.ffindex"]))
-
-    command = (f"{a3m_fftuple[0]} {a3m_fftuple[1]} "
-               f"-i {hmm_ffindex} -d {hmm_ffdata} "
-               "-- hhmake -i stdin -o stdout -v 0")
-
-    if use_mpi:
-        os.environ["OMP_NUM_THREADS"] = "1"
-        command = "".join([f"mpirun -np {threads} ffindex_apply_mpi ",
-                           command])
-    else:
-        command = "".join(["ffindex_apply ", command])
-
-    split_command = shlex.split(command)
-    with Popen(args=split_command, stdout=stdout, stderr=stdout) as process:
-        out, errors = process.communicate()
-
-    return (hmm_ffdata, hmm_ffindex)
-
-
-def create_cs219_ffindex(db_dir, db_name, stdout=None):
-    if stdout is None:
-        stdout = DEVNULL
-
-    a3m_ffpath = db_dir.joinpath("".join([db_name, "_a3m"]))
-    cs219_ffpath = db_dir.joinpath("".join([db_name, "_cs219"]))
-
-    command = ("cstranslate -f -x 0.3 -c 4 -I a3m "
-               f"-i {a3m_ffpath} -o {cs219_ffpath}")
-
-    split_command = shlex.split(command)
-    with Popen(args=split_command, stdout=stdout, stderr=stdout) as process:
-        out, errors = process.communicate()
-
-
-def create_sorting_file(db_dir, db_name, sorting_file=None, stdout=None):
-    if sorting_file is None:
-        sorting_file = db_dir.joinpath("sorting.dat")
-
-    cs219_ffindex = db_dir.joinpath("".join([db_name, "_cs219.ffindex"]))
-
-    sort_command = f"sort -k3 -n -r {cs219_ffindex} "
-    cut_command = "cut -f1"
-
-    split_sort_command = shlex.split(sort_command)
-    split_cut_command = shlex.split(cut_command)
-
-    sort_process = Popen(args=split_sort_command, stdout=PIPE)
-    cut_process = Popen(args=split_cut_command, stdout=PIPE,
-                        stdin=sort_process.stdout)
-    sort_process.stdout.close()
-
-    file_handle = sorting_file.open(mode="w")
-    file_handle.write((cut_process.communicate()[0]).decode("utf-8"))
-    file_handle.close()
-
-    return sorting_file
-
-
-def sort_a3m_ffindex(db_dir, db_name, sorting_file, a3m_tuple, stdout=None):
-    if stdout is None:
-        stdout = DEVNULL
-
-    ord_a3m_ffdata = db_dir.joinpath("".join([db_name, "ordered_a3m.ffdata"]))
-    ord_a3m_ffindex = db_dir.joinpath("".join(
-                                            [db_name, "ordered_a3m.ffindex"]))
-
-    command = (f"ffindex_order {sorting_file} {a3m_tuple[0]} {a3m_tuple[1]} "
-               f"{ord_a3m_ffdata} {ord_a3m_ffindex}")
-
-    split_command = shlex.split(command)
-    with Popen(args=split_command, stdout=stdout, stderr=stdout) as process:
-        out, errors = process.communicate()
-
-    ord_a3m_ffdata.replace(a3m_tuple[0])
-    ord_a3m_ffindex.replace(a3m_tuple[1])
-
-
-def sort_hmm_ffindex(db_dir, db_name, sorting_file, hmm_tuple, stdout=None):
-    if stdout is None:
-        stdout = DEVNULL
-
-    ord_hmm_ffdata = db_dir.joinpath("".join([db_name, "ordered_hmm.ffdata"]))
-    ord_hmm_ffindex = db_dir.joinpath("".join(
-                                            [db_name, "ordered_hmm.ffindex"]))
-
-    command = (f"ffindex_order {sorting_file} {hmm_tuple[0]} {hmm_tuple[1]} "
-               f"{ord_hmm_ffdata} {ord_hmm_ffindex}")
-
-    split_command = shlex.split(command)
-    with Popen(args=split_command, stdout=stdout, stderr=stdout) as process:
-        out, errors = process.communicate()
-
-    ord_hmm_ffdata.replace(hmm_tuple[0])
-    ord_hmm_ffindex.replace(hmm_tuple[1])
-
-
-def verify_hhsuite_database(db_dir, db_name, threads=1, stdout=None):
-    if stdout is None:
-        stdout = DEVNULL
-
-    return True
-
-
-# MMSEQS DB HELPER FUNCTIONS
-# -----------------------------------------------------------------------------
 
 CLUSTER_ARGS = {"tmp_dir": None,
                 "identity": None,

@@ -209,3 +209,8 @@ def name_comment_file(name, path):
     for line in aln_data:
         filehandle.write(line)
     filehandle.close()
+
+
+def create_phamdb_version_file(filepath, versions_dict):
+    with filepath.open(mode="w") as filehandle:
+        json.dump(versions_dict, filehandle)
