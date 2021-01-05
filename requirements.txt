@@ -1,10 +1,11 @@
 bitarray==1.5.3
 mmh3==2.5.1
-pdm_utils==0.8.16
+pdm_utils
 primer3-py==0.6.1
 psutil==5.7.2
 python-Levenshtein==0.12.0
 
 # conda install clustalo
+# conda install mash
 # conda install hhsuite==3.2.0
 # sudo apt-get install emboss

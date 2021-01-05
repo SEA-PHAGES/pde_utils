@@ -23,6 +23,9 @@ EMBOSS_TOOL_SETTINGS = {"needle": {"gapopen": 10,
                                   "gapextend": 0.5}
                         }
 
+MASH_TOOL_SETTINGS = {"kmer": 15, "sketch": 25000}
+
+
 CLUSTALO_FORMATS = ["fasta", "clustal", "clustal", "phylip", "selex",
                     "stockholm", "vienna"]
 
@@ -47,8 +50,8 @@ def calculate_levenshtein(source_str, target_str, identity=False):
     return percent
 
 
-def pairwise_align(query_seq_path, target_seq_path, outfile_path,
-                   tool="needle", gapopen=None, gapextend=None):
+def emboss_pairwise_align(query_seq_path, target_seq_path, outfile_path,
+                          tool="needle", gapopen=None, gapextend=None):
     """Aligns two sequences from fasta_files using EMBOSS tools.
     :param query_seq_path: Path to sequence A for pairwise alignment.
     :type query_seq_path: Path
@@ -140,6 +143,51 @@ def create_water_cline(query_seq_path, target_seq_path, outfile_path,
 
     return water_cline
 
+
+def mash_sketch(seq_path, out_path, kmer=None, sketch=None, verbose=0):
+    command = (f"mash sketch {seq_path} -o {out_path}")
+
+    if kmer is not None:
+        command = " ".join([command, "-k", str(kmer)])
+    if sketch is not None:
+        command = " ".join([command, "-s", str(sketch)])
+
+    command = shlex.split(command)
+    with Popen(args=command, stdout=PIPE, stderr=PIPE) as process:
+        out, errors = process.communicate()
+        if verbose > 0 and out:
+            print(out.decode("utf-8"))
+        if verbose > 1 and errors:
+            print(errors.decode("utf-8"))
+
+    out_path = out_path.with_name("".join([out_path.name, ".msh"]))
+    return out_path
+
+
+def mash_dist(query_seq_path, target_seq_path, outfile=None, kmer=None,
+              sketch=None, verbose=0):
+    command = (f"mash dist {query_seq_path} {target_seq_path}")
+
+    if kmer is not None:
+        command = " ".join([command, "-k", str(kmer)])
+    if sketch is not None:
+        command = " ".join([command, "-s", str(sketch)])
+    if outfile is not None:
+        command = " ".join([command, ">", str(outfile)])
+
+    command = shlex.split(command)
+    with Popen(args=command, stdout=PIPE, stderr=PIPE) as process:
+        out, errors = process.communicate()
+
+        out = out.decode("utf-8")
+        if verbose > 0 and out:
+            print(out)
+        if verbose > 1 and errors:
+            print(errors.decode("utf-8"))
+
+    return out
+
+
 # MULTIPLE SEQUENCE TOOLS
 # ---------------------------------------------------------------------
 
@@ -155,7 +203,7 @@ def mBed(fasta_file, distmat_out):
     :type distmat_out: Path
     :type distmat_out: str
     """
-    command = (f"mBed -infile {fasta_file}")
+    command = (f"""mBed -infile "{fasta_file}" """)
 
     command = shlex.split(command)
 
@@ -208,16 +256,17 @@ def clustalo(fasta_file, aln_out_path, mat_out_path=None, tree_out_path=None,
 
     # Build Clustal Omega command that will produce a clustal-formatted
     # alignment output file and percent identity matrix
-    command = f"clustalo -i {fasta_file} -o {aln_out_path} " \
+    command = f"""clustalo -i "{fasta_file}" -o "{aln_out_path}" """ \
               f" --outfmt={outfmt} --infmt={infmt} "\
               f"--force --output-order=tree-order " \
               f"--threads={threads}"
 
     if mat_out_path is not None:
-        command = " ".join([command, (f"--distmat-out={mat_out_path} "
+        command = " ".join([command, (f"""--distmat-out="{mat_out_path}" """
                                       "--full --percent-id")])
     if tree_out_path is not None:
-        command = " ".join([command, (f"--guidetree-out={tree_out_path} ")])
+        command = " ".join([command, (
+                                f"""--guidetree-out="{tree_out_path}" """)])
 
     for _ in range(verbose):
         command += " -v"                # Add verbosity to command
@@ -258,7 +307,8 @@ def hhmake(infile_path, hhm_path, name=None, add_cons=False, seq_lim=None,
     :rtype: str
     :rtype: Path
     """
-    command = f"hhmake -i {infile_path} -o {hhm_path} -v {verbose} -M {M}"
+    command = (f"""hhmake -i "{infile_path}" -o "{hhm_path}" """
+               f"-v {verbose} -M {M}")
 
     if name is not None:
         command = " ".join([command, "-name", name])
@@ -297,8 +347,8 @@ def hhalign(query_path, target_path, hhr_path, verbose=0):
     :rtype: str
     :rtype: Path
     """
-    command = f"hhalign -i {query_path} -t {target_path} -o {hhr_path} " \
-              f"-v {verbose}"
+    command = (f"""hhalign -i "{query_path}" -t "{target_path}" """
+               f"""-o "{hhr_path}" -v {verbose}""")
 
     with Popen(args=shlex.split(command), stdout=PIPE, stderr=PIPE) as process:
         out, errors = process.communicate()
@@ -329,7 +379,8 @@ def hmmbuild(infile_path, hmm_path, seq_type="dna", verbose=0):
     elif seq_type.lower() == "amino":
         command = " ".join([command, "--amino"])
 
-    command = " ".join([command, str(hmm_path), str(infile_path)])
+    command = "".join([command, ' "', str(hmm_path), '" "', str(infile_path),
+                       '" '])
 
     with Popen(args=shlex.split(command), stdout=PIPE, stderr=PIPE) as process:
         out, errors = process.communicate()

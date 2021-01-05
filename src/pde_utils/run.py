@@ -2,9 +2,10 @@ import argparse
 import timeit
 
 from pde_utils.pipelines import (
-                    build_pan, find_primers, make_db, pham_align)
+                    build_pan, cluster_db, find_primers, make_db, pham_align)
 
-VALID_PIPELINES = ["build_pan", "find_primers", "make_db", "pham_align"]
+VALID_PIPELINES = ["build_pan", "cluster_db", "find_primers",
+                   "make_db", "pham_align"]
 
 
 def main(unparsed_args):
@@ -15,6 +16,8 @@ def main(unparsed_args):
 
     if args.pipeline == "build_pan":
         build_pan.main(unparsed_args)
+    elif args.pipeline == "cluster_db":
+        cluster_db.main(unparsed_args)
     elif args.pipeline == "find_primers":
         find_primers.main(unparsed_args)
     elif args.pipeline == "make_db":

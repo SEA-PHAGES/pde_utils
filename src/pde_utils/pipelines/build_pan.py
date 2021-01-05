@@ -11,18 +11,12 @@ import pickle
 import random
 
 from Bio.Application import ApplicationError
-from pdm_utils.functions import basic
-from pdm_utils.functions import configfile
-from pdm_utils.functions import fileio as pdm_fileio
-from pdm_utils.functions import multithread
-from pdm_utils.functions import parallelize
-from pdm_utils.functions import pipelines_basic
+from pdm_utils.functions import (basic, configfile, fileio as pdm_fileio,
+                                 multithread, parallelize, pipelines_basic)
 
 from pde_utils.classes import pan_models
-from pde_utils.functions import alignment
-from pde_utils.functions import pan_handling
-from pde_utils.functions import fileio as pde_fileio
-from pde_utils.functions import search
+from pde_utils.functions import (alignment, pan_handling, fileio as pde_fileio,
+                                 search)
 
 # GLOBAL VARIABLES
 # -----------------------------------------------------------------------------
@@ -279,8 +273,8 @@ def build_pan_nodes(pan_alchemist, values, data_maps_tuple, threads=1,
         work_items.append((pan_nodes_dict, pham, aln_path, mat_path,
                            tree_path, pan_lock))
 
-    multithread.multithread(build_pan_nodes_threadtask, work_items,
-                            threads=threads)
+    multithread.multithread(work_items, threads, build_pan_nodes_threadtask,
+                            verbose=verbose)
 
     if verbose:
         print("...Writing pham data to PAN...")
@@ -322,8 +316,13 @@ def build_pan_neighborhoods(alchemist, pan_alchemist, values, data_dir,
                                data_maps_tuple[1].get(int(cluster)),
                                data_maps_tuple[2].get(int(cluster)))
 
-    aln_work_chunks = basic.partition_list(aln_work_items,
-                                           int(math.sqrt(len(aln_work_items))))
+    chunk_size = int(math.sqrt(len(aln_work_items)))
+    if chunk_size > 0:
+        aln_work_chunks = basic.partition_list(aln_work_items, int(math.sqrt(
+                                                        len(aln_work_items))))
+    else:
+        aln_work_chunks = [aln_work_items]
+
     if verbose:
         print("...Computing pham cluster minimum distances...")
     identity_edge_chunks = parallelize.parallelize(

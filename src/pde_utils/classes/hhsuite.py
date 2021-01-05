@@ -4,8 +4,8 @@ import re
 # -----------------------------------------------------------------------------
 HHRESULT_HEADERS = {"query_id": re.compile("Query         ([\w\W\s\S]+)\n"),
                     "match_cols": re.compile("Match_columns ([\d]+)\n"),
-                    "num_seqs": re.compile("No_of_seqs    (\d out of \d)\n"),
-                    "neff": re.compile("Neff          ([\d]+)\n"),
+                    "num_seqs": re.compile("No_of_seqs    (\d+ out of \d+)\n"),
+                    "neff": re.compile("Neff          ([\d\.]+)\n"),
                     "searched_HMMs": re.compile("Searched_HMMs ([\d]+)\n"),
                     "date": re.compile("Date          ([\w\W\s\S]+)\n"),
                     "command": re.compile("Command       ([\w\W\s\S]+)\n")}
@@ -49,7 +49,10 @@ class HHResult:
                 header_split = re.split(reg_expr, header_line)
                 if len(header_split) != 3:
                     raise HHResultFormatError("File header could not be "
-                                              "identified as a HHresult file.")
+                                              "identified as a HHresult file."
+                                              "\nHHparser failed to recognize "
+                                              f"'{attr_name}' header line in "
+                                              f"{self.__filepath__}.")
                 setattr(self, attr_name, header_split[1])
 
             filehandle.readline()
