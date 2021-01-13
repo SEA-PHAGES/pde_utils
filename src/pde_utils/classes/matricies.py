@@ -74,7 +74,7 @@ class SymmetricMatrix:
         """
         return self.labels[index]
 
-    def get_representative(self):
+    def get_centroid(self):
         """
         Interprets cells as percent identities, and returns the label
         with highest average identity to all other labels. For small

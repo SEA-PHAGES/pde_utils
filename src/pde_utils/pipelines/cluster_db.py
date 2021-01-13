@@ -9,7 +9,8 @@ from pdm_utils.functions import (basic, configfile, multithread, parallelize,
                                  fileio as pdm_fileio, pipelines_basic)
 from pdm_utils.pipelines.revise import TICKET_HEADER
 
-from pde_utils.functions import (alignment, phage_similarity)
+from pde_utils.functions import (alignment, clustering, seq_distance,
+                                 sql_queries)
 
 
 # GLOBAL VARIABLES
@@ -201,7 +202,7 @@ def execute_cluster_db(
 
         if verbose:
             print("Calculating gene content similarity matrix...")
-        gcs_matrix = phage_similarity.calculate_gcs_symmetric_matrix(
+        gcs_matrix = calculate_gcs_matrix(
                                                 alchemist, db_filter.values,
                                                 verbose=verbose, cores=threads)
 
@@ -258,6 +259,34 @@ def query_cluster_metadata(db_filter):
 
     return (cluster_lookup, seqid_cluster_map,
             subcluster_lookup)
+
+
+# MATRIX HELPER FUNCTIONS
+# -----------------------------------------------------------------------------
+def calculate_gcs_matrix(alchemist, phage_ids, cores=1, verbose=False):
+    phage_gc_nodes = []
+    for phage in phage_ids:
+        phage_gc_nodes.append(
+                    sql_queries.get_distinct_phams_from_organism(
+                                                    alchemist, phage))
+
+    gcs_matrix = clustering.build_symmetric_matrix(
+                                phage_gc_nodes,
+                                seq_distance.calculate_gcs, names=phage_ids,
+                                cores=cores, verbose=verbose)
+    return gcs_matrix
+
+
+def calculate_ani_matrix(phage_ids, sketch_path_map, cores=1, verbose=False):
+    sketch_paths = []
+    for phage_id in phage_ids:
+        sketch_paths.append(sketch_path_map[phage_id])
+
+    ani_matrix = clustering.build_symmetric_matrix(
+                                sketch_paths, calculate_ani,
+                                names=phage_ids, cores=cores, verbose=verbose)
+
+    return ani_matrix
 
 
 def sketch_genomes(db_filter, working_dir, verbose=False, threads=1,
@@ -350,15 +379,11 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
             seqids.append(nonmember)
             subcluster_seqid_map[nonmember_cluster] = seqids
 
-        sketch_paths = []
-        for seqid in cluster_members:
-            sketch_paths.append(sketch_path_map[seqid])
-
         if verbose:
             print(f"Subclustering {cluster}...")
-        ani_matrix = phage_similarity.calculate_ani_symmetric_matrix(
-                                    sketch_paths, cores=threads,
-                                    verbose=verbose)
+
+        ani_matrix = calculate_ani_matrix(cluster_members, sketch_path_map,
+                                          cores=threads, verbose=verbose)
 
         subcluster_scheme = ani_matrix.get_clusters(ani)
         subcluster_scheme, old_subcluster_histogram = recluster(
@@ -435,6 +460,14 @@ def gen_new_subcluster(cluster, old_subclusters):
         subcluster = "".join([cluster, str(i)])
         if subcluster not in old_subclusters:
             return subcluster
+
+
+def calculate_ani(subject_path, query_path):
+    mash_output = alignment.mash_dist(subject_path, query_path)
+    ani_data = mash_output.split("\t")
+
+    if len(ani_data) == 5:
+        return 1 - float(ani_data[2])
 
 
 def recluster(cluster_scheme, cluster_lookup, old_clusters,
