@@ -26,7 +26,8 @@ def build_symmetric_matrix(nodes, distance_function, names=None,
                                    subject, query_node_chunks[j], i, j))
 
     matrix_data = parallelize.parallelize(work_items, cores,
-                                          build_matrix_process)
+                                          build_matrix_process,
+                                          verbose=verbose)
 
     matrix_data.sort(key=lambda x: (x[1], x[2]))
 
@@ -103,17 +104,18 @@ def greedy(matrix, threshold, return_matrix=False):
         cluster_matricies = {}
         for cluster, cluster_members in clusters.items():
             cluster_matricies[cluster] = matrix.get_submatrix_from_labels(
-                                                        cluster_members)
+                                                        list(cluster_members))
+        clusters = cluster_matricies
 
     return clusters
 
 
-def upgma(matrix, iterations, metric="DB"):
+def upgma(matrix, iterations, metric="DB", return_matrix=False):
     tree = create_upgma_tree(matrix)
 
     curr_clades = [x for x in tree.root.clades]
 
-    clustering_iters_map = dict()
+    clustering_scheme_map = dict()
     for _ in range(iterations):
         clade_matricies = []
         clustering_scheme = {}
@@ -126,18 +128,27 @@ def upgma(matrix, iterations, metric="DB"):
             clustering_scheme[i+1] = clade.matrix.labels
 
         if metric == "DB":
-            metric = calculate_DB_index(matrix, clade_matricies)
+            metric_val = calculate_DB_index(matrix, clade_matricies)
 
-        clustering_iters_map[len(clade_matricies)] = (metric,
-                                                      clustering_scheme)
+        clustering_scheme_map[len(curr_clades)] = (metric_val,
+                                                   clustering_scheme)
 
         if not split_weakest_clade(curr_clades):
             break
 
-    num_clusters, cluster_data = min(clustering_iters_map.items(),
+    num_clusters, cluster_data = min(clustering_scheme_map.items(),
                                      key=lambda x: x[1][0])
 
-    return cluster_data[1]
+    clustering_scheme = cluster_data[1]
+    if return_matrix:
+        cluster_matricies = {}
+        for cluster, members in clustering_scheme.items():
+            cluster_matricies[cluster] = matrix.get_submatrix_from_labels(
+                                                                    members)
+
+        clustering_scheme = cluster_matricies
+
+    return clustering_scheme
 
 
 # CLUSTERING METRIC FUNCTIONS
@@ -155,8 +166,11 @@ def calculate_DB_index(matrix, submatricies):
 
     db_index = 0
     for centroid, spread in centroid_spread_map.items():
-        nearest_centroid, dist = min(centroid_adj_map[centroid],
-                                     key=lambda x: x[1])
+        adj_map = centroid_adj_map[centroid]
+        if not adj_map:
+            continue
+
+        nearest_centroid, dist = min(adj_map, key=lambda x: x[1])
 
         db_sep = (float(spread + centroid_spread_map[nearest_centroid]) /
                   float(dist))
@@ -179,10 +193,12 @@ def create_upgma_tree(matrix):
 
     unmerged_clusters = list(clade_map.keys())
     unmerged_clades = list(clade_map.values())
-    root = BaseTree.Clade(branch_length=(
-                                adj_map[unmerged_clusters[0]][
-                                                unmerged_clusters[1]]),
-                          clades=unmerged_clades)
+    if len(unmerged_clusters) > 1:
+        branch_length = adj_map[unmerged_clusters[0]][unmerged_clusters[1]]
+    else:
+        branch_length = 0
+
+    root = BaseTree.Clade(branch_length=branch_length, clades=unmerged_clades)
     root.matrix = matrix
     tree = BaseTree.Tree(root=root, rooted=False)
 
@@ -193,6 +209,9 @@ def create_closest_pairs(adj_map):
     closest_pairs = dict()
     temp_adj_map = dict()
     for cluster, adj_list in adj_map.items():
+        if not adj_list:
+            continue
+
         adj_dict = dict()
 
         closest = adj_list[0][0]

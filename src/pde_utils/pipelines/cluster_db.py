@@ -1,4 +1,5 @@
 import argparse
+import math
 from pathlib import Path
 import shutil
 import string
@@ -197,14 +198,11 @@ def execute_cluster_db(
         db_filter.values = db_filter.build_values(where=conditionals)
 
         if verbose:
-            print("Querying MySQL database for genome metadata...")
+            print("Querying MySQL database for clustering metadata...")
         cluster_metadata = query_cluster_metadata(db_filter)
 
-        if verbose:
-            print("Calculating gene content similarity matrix...")
-        gcs_matrix = calculate_gcs_matrix(
-                                                alchemist, db_filter.values,
-                                                verbose=verbose, cores=threads)
+        gcs_matrix = calculate_gcs_matrix(alchemist, db_filter.values,
+                                          verbose=verbose, cores=threads)
 
         pipelines_basic.create_working_dir(mapped_path)
         if pipeline == "analyze":
@@ -264,12 +262,16 @@ def query_cluster_metadata(db_filter):
 # MATRIX HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 def calculate_gcs_matrix(alchemist, phage_ids, cores=1, verbose=False):
+    if verbose:
+        print("Querying MySQL database for genome gene content...")
     phage_gc_nodes = []
     for phage in phage_ids:
         phage_gc_nodes.append(
                     sql_queries.get_distinct_phams_from_organism(
                                                     alchemist, phage))
 
+    if verbose:
+        print("Calculating gene content similarity matrix...")
     gcs_matrix = clustering.build_symmetric_matrix(
                                 phage_gc_nodes,
                                 seq_distance.calculate_gcs, names=phage_ids,
@@ -309,20 +311,36 @@ def sketch_genomes(db_filter, working_dir, verbose=False, threads=1,
     return sketch_path_map
 
 
+def create_cluster_scheme(matrix, threshold):
+    greedy_scheme = clustering.greedy(matrix, threshold, return_matrix=True)
+
+    cluster_scheme = {}
+    cluster_count = 1
+    for cluster, submatrix in greedy_scheme.items():
+        upgma_scheme = clustering.upgma(submatrix,
+                                        int(math.sqrt(submatrix.size)))
+
+        for members in upgma_scheme.values():
+            cluster_scheme[cluster_count] = members
+            cluster_count += 1
+
+    return cluster_scheme
+
+
 def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
                 verbose=False, gcs=DEFAULT_SETTINGS["gcs"], evaluate=False,
                 cluster_prefix=None):
-    cluster_scheme = clustering.greedy(gcs_matrix, gcs)
+    cluster_scheme = create_cluster_scheme(gcs_matrix, gcs)
 
     old_clusters = list(cluster_seqid_map.keys())
-    cluster_scheme, old_cluster_histograms = recluster(
+    cluster_scheme, old_cluster_histograms = name_clusters(
                                             cluster_scheme, cluster_lookup,
                                             old_clusters, verbose=verbose,
                                             cluster_prefix=cluster_prefix)
 
     altered_cluster_scheme = {}
     for cluster, cluster_members in cluster_scheme.items():
-        if ((cluster not in old_clusters or
+        if (((cluster not in cluster_seqid_map.keys()) or
              len(old_cluster_histograms[cluster]) > 1)
                 and cluster is not None):
             altered_cluster_scheme[cluster] = cluster_members
@@ -334,7 +352,7 @@ def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
                             old_cluster_histograms, cluster_lookup,
                             cluster_seqid_map, "gene content similarity")
 
-    wrote_ticket = write_reclustering_update_ticket(
+    wrote_ticket = write_clustering_update_ticket(
                                      working_dir, cluster_lookup,
                                      altered_cluster_scheme, field="Cluster")
 
@@ -386,7 +404,7 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
                                           cores=threads, verbose=verbose)
 
         subcluster_scheme = clustering.greedy(ani_matrix, ani)
-        subcluster_scheme, old_subcluster_histogram = recluster(
+        subcluster_scheme, old_subcluster_histogram = name_clusters(
                                         subcluster_scheme,
                                         altered_subcluster_lookup,
                                         list(old_subclusters),
@@ -402,7 +420,7 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
         subcluster_dir = working_dir.joinpath(str(cluster))
         pipelines_basic.create_working_dir(subcluster_dir)
 
-        wrote_ticket = write_reclustering_update_ticket(
+        wrote_ticket = write_clustering_update_ticket(
                                 subcluster_dir, subcluster_lookup,
                                 subcluster_scheme, field="Subcluster")
 
@@ -470,8 +488,8 @@ def calculate_ani(subject_path, query_path):
         return 1 - float(ani_data[2])
 
 
-def recluster(cluster_scheme, cluster_lookup, old_clusters,
-              verbose=False, cluster_prefix=None, subcluster=None):
+def name_clusters(cluster_scheme, cluster_lookup, old_clusters,
+                  verbose=False, cluster_prefix=None, subcluster=None):
     old_cluster_histograms = {}
     new_cluster_scheme = {}
     for tmp_cluster_name, cluster_members in cluster_scheme.items():
@@ -544,8 +562,7 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
 
         full_data_lines.append(f"Cluster {new_cluster} changes:")
 
-        new_avg_gcs = get_average_intercluster_identity(
-                                matrix, list(new_cluster_members))
+        new_avg_gcs = get_average_intercluster_identity(matrix)
 
         old_cluster_members = cluster_seqid_map.get(new_cluster)
         if old_cluster_members is None:
@@ -554,90 +571,94 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
                     "{:.1f} % intercluster ".format(new_avg_gcs*100),
                     metric]), width=75))
             full_data_lines.append(textwrap.indent(line, "\t"))
-            full_data_lines.append("")
+
+            for member in new_cluster_members:
+                line = "\n".join(textwrap.wrap((
+                            f"* {member} [{cluster_lookup[member]}] "
+                            f"was added to cluster {new_cluster}"), width=71))
+                full_data_lines.append(textwrap.indent(line, "\t\t"))
 
             quick_data_lines.append(f"Created {new_cluster}")
-            continue
 
-        old_avg_gcs = get_average_intercluster_identity(
-                                        matrix, old_cluster_members)
+        else:
+            old_avg_gcs = get_average_intercluster_identity(matrix)
 
-        line = "\n".join(textwrap.wrap("".join([
-                       f"> Cluster {new_cluster} genomes had an average of ",
-                       "{:.1f}% intercluster ".format(old_avg_gcs*100),
-                       metric]), width=75))
-        full_data_lines.append(textwrap.indent(line, "\t"))
+            line = "\n".join(textwrap.wrap("".join([
+                        f"> Cluster {new_cluster} genomes had an average of ",
+                        "{:.1f}% intercluster ".format(old_avg_gcs*100),
+                        metric]), width=75))
+            full_data_lines.append(textwrap.indent(line, "\t"))
 
-        for old_cluster, num_members in old_cluster_histogram.items():
-            if new_cluster == old_cluster:
-                continue
+            for old_cluster, num_members in old_cluster_histogram.items():
+                if new_cluster == old_cluster:
+                    continue
 
-            added_cluster_members = cluster_seqid_map[old_cluster]
-            merged_cluster_members = set(added_cluster_members).intersection(
-                                                    set(new_cluster_members))
+                added_cluster_members = cluster_seqid_map[old_cluster]
+                merged_cluster_members = set(
+                                          added_cluster_members).intersection(
+                                                set(new_cluster_members))
 
-            old_merged_avg_gcs = get_average_intercluster_identity(
-                                    matrix,
-                                    list(cluster_seqid_map[old_cluster]))
+                old_merged_avg_gcs = get_average_intercluster_identity(matrix)
 
-            percent = (round(num_members / len(
-                             cluster_seqid_map[old_cluster]), 3) * 100)
-            if percent < 50 or old_cluster is None:
-                if old_cluster is None:
-                    old_cluster = "Singleton"
+                percent = (round(num_members / len(
+                                 cluster_seqid_map[old_cluster]), 3) * 100)
+                if percent < 50 or old_cluster is None:
+                    if old_cluster is None:
+                        old_cluster = "Singleton"
 
-                for merged_cluster_member in merged_cluster_members:
-                    avg_int_gcs = get_intersecting_average_identity(
-                                        matrix, list(old_cluster_members),
-                                        [merged_cluster_member])
-                    quick_data_lines.append(
+                    for merged_cluster_member in merged_cluster_members:
+                        avg_int_gcs = get_intersecting_average_identity(
+                                            matrix, list(old_cluster_members),
+                                            [merged_cluster_member])
+                        quick_data_lines.append(
                                     f"Added {new_cluster} <- "
                                     f"{merged_cluster_member} [{old_cluster}]")
 
-                    line = "\n".join(textwrap.wrap((
-                          f"* {merged_cluster_member} [{old_cluster}] "
-                          f"was added to cluster {new_cluster}"), width=71))
-                    full_data_lines.append(textwrap.indent(line, "\t\t"))
+                        line = "\n".join(textwrap.wrap((
+                            f"* {merged_cluster_member} [{old_cluster}] "
+                            f"was added to cluster {new_cluster}"), width=71))
+                        full_data_lines.append(textwrap.indent(line, "\t\t"))
 
-                    line = "\n".join(textwrap.wrap("".join([
-                          f"- {merged_cluster_member} has an ",
-                          "average of {:.1f}% ".format(avg_int_gcs*100),
-                          metric,
-                          f" with cluster {new_cluster} genomes"]), width=67))
-                    full_data_lines.append(textwrap.indent(line, "\t\t\t"))
-                continue
+                        line = "\n".join(textwrap.wrap("".join([
+                         f"- {merged_cluster_member} has an ",
+                         "average of {:.1f}% ".format(avg_int_gcs*100),
+                         metric,
+                         f" with cluster {new_cluster} genomes"]), width=67))
+                        full_data_lines.append(textwrap.indent(line, "\t\t\t"))
+                    continue
 
-            quick_data_lines.append(f"Merged {new_cluster} <- "
-                                    f"{old_cluster} ({percent}%)")
+                quick_data_lines.append(f"Merged {new_cluster} <- "
+                                        f"{old_cluster} ({percent}%)")
 
-            line = "\n".join(textwrap.wrap((
-                             f"* {percent}% of cluster {old_cluster} "
-                             f"was merged into cluster {new_cluster}"),
-                             width=71))
-            full_data_lines.append(textwrap.indent(line, "\t\t"))
+                line = "\n".join(textwrap.wrap((
+                                 f"* {percent}% of cluster {old_cluster} "
+                                 f"was merged into cluster {new_cluster}"),
+                                 width=71))
+                full_data_lines.append(textwrap.indent(line, "\t\t"))
 
-            line = "\n".join(textwrap.wrap("".join([
-                    f"- Cluster {old_cluster} genomes had an average of ",
-                    "{:.1f}% intercluster ".format(old_merged_avg_gcs*100),
-                    metric]), width=67))
-            full_data_lines.append(textwrap.indent(line, "\t\t\t"))
-
-            avg_int_gcs = get_intersecting_average_identity(
-                                        matrix, list(old_cluster_members),
-                                        list(merged_cluster_members))
-            if avg_int_gcs is not None:
                 line = "\n".join(textwrap.wrap("".join([
-                        f"- Merged cluster {old_cluster} genomes have an ",
-                        "average of {:.1f}% ".format(avg_int_gcs*100),
-                        f"{metric} with cluster ",
-                        f"{new_cluster} genomes"]), width=67))
+                        f"- Cluster {old_cluster} genomes had an average of ",
+                        "{:.1f}% intercluster ".format(old_merged_avg_gcs*100),
+                        metric]), width=67))
                 full_data_lines.append(textwrap.indent(line, "\t\t\t"))
 
-        line = "\n".join(textwrap.wrap("".join([
-                    f"> Reclustered {new_cluster} has an average of ",
-                    "{:.1f} % intercluster ".format(new_avg_gcs*100),
-                    metric]), width=75))
-        full_data_lines.append(textwrap.indent(line, "\t"))
+                avg_int_gcs = get_intersecting_average_identity(
+                                            matrix, list(old_cluster_members),
+                                            list(merged_cluster_members))
+                if avg_int_gcs is not None:
+                    line = "\n".join(textwrap.wrap("".join([
+                            f"- Merged cluster {old_cluster} genomes have an ",
+                            "average of {:.1f}% ".format(avg_int_gcs*100),
+                            f"{metric} with cluster ",
+                            f"{new_cluster} genomes"]), width=67))
+                    full_data_lines.append(textwrap.indent(line, "\t\t\t"))
+
+            line = "\n".join(textwrap.wrap("".join([
+                        f"> Reclustered {new_cluster} has an average of ",
+                        "{:.1f} % intercluster ".format(new_avg_gcs*100),
+                        metric]), width=75))
+            full_data_lines.append(textwrap.indent(line, "\t"))
+
         full_data_lines.append("")
 
     if (not full_data_lines) and (not quick_data_lines):
@@ -660,9 +681,9 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
     return True
 
 
-def write_reclustering_update_ticket(working_dir, cluster_lookup,
-                                     cluster_scheme, field="Cluster",
-                                     filename=None):
+def write_clustering_update_ticket(working_dir, cluster_lookup,
+                                   cluster_scheme, field="Cluster",
+                                   filename=None):
     if filename is None:
         filename = working_dir.with_suffix(".csv").name
     update_dicts = []
@@ -691,23 +712,10 @@ def write_reclustering_update_ticket(working_dir, cluster_lookup,
     return True
 
 
-def get_average_intercluster_identity(matrix, labels):
-    label_indicies = []
-    for label in labels:
-        label_indicies.append(matrix.get_index_from_label(label))
+def get_average_intercluster_identity(matrix):
+    centroid = matrix.get_centroid()
 
-    avg_gcs = 0
-    num_edges = 0
-    for i in range(len(label_indicies)):
-        for j in range(i+1, len(label_indicies)):
-            num_edges += 1
-
-            avg_gcs += matrix.get_cell(label_indicies[i],
-                                       label_indicies[j])
-    if num_edges == 0:
-        return 1
-
-    return avg_gcs / num_edges
+    return matrix.get_average_value(centroid)
 
 
 def get_intersecting_average_identity(matrix, subject_labels, query_labels):
