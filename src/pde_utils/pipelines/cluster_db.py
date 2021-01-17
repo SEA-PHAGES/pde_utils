@@ -312,7 +312,7 @@ def sketch_genomes(db_filter, working_dir, verbose=False, threads=1,
 def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
                 verbose=False, gcs=DEFAULT_SETTINGS["gcs"], evaluate=False,
                 cluster_prefix=None):
-    cluster_scheme = gcs_matrix.get_clusters(gcs)
+    cluster_scheme = clustering.greedy(gcs_matrix, gcs)
 
     old_clusters = list(cluster_seqid_map.keys())
     cluster_scheme, old_cluster_histograms = recluster(
@@ -385,7 +385,7 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
         ani_matrix = calculate_ani_matrix(cluster_members, sketch_path_map,
                                           cores=threads, verbose=verbose)
 
-        subcluster_scheme = ani_matrix.get_clusters(ani)
+        subcluster_scheme = clustering.greedy(ani_matrix, ani)
         subcluster_scheme, old_subcluster_histogram = recluster(
                                         subcluster_scheme,
                                         altered_subcluster_lookup,

@@ -13,7 +13,6 @@ class SymmetricMatrix:
         self.labels = labels
         self.size = len(labels)
         self.matrix = np.zeros((self.size, self.size), float)
-        self.clusters = dict()
 
     def fill_diagonal(self, value):
         """
@@ -58,6 +57,14 @@ class SymmetricMatrix:
                              f"matrix of size {self.size}")
         return self.matrix[row][col]
 
+    def get_row(self, index):
+        """
+        Returns a copy of the requested matrix row.
+        :param index: index of the row to be returned
+        :return: copy of self.__matrix__[index]
+        """
+        return self.matrix[index][:]
+
     def get_index_from_label(self, label):
         """
         Search function that returns a label's index in the label list
@@ -73,6 +80,37 @@ class SymmetricMatrix:
         :return: label
         """
         return self.labels[index]
+
+    def get_submatrix_from_indicies(self, indicies):
+        labels = []
+
+        for index in indicies:
+            labels.append(self.get_label_from_index(index))
+
+        submatrix = SymmetricMatrix(labels)
+        self.fill_submatrix(submatrix, indicies)
+        return submatrix
+
+    def get_submatrix_from_labels(self, labels):
+        submatrix = SymmetricMatrix(labels)
+
+        indicies = []
+        for label in labels:
+            indicies.append(self.get_index_from_label(label))
+
+        self.fill_submatrix(submatrix, indicies)
+        return submatrix
+
+    def fill_submatrix(self, submatrix, indicies):
+        for i in range(len(indicies)):
+            if i == len(indicies) - 1:
+                continue
+
+            subject = indicies[i]
+            for j in range(i+1, len(indicies)):
+                query = indicies[j]
+
+                submatrix.fill_cell(i, j, self.get_cell(subject, query))
 
     def get_centroid(self):
         """
@@ -94,88 +132,39 @@ class SymmetricMatrix:
                                                     max(avg_pws_identities))
             return self.get_label_from_index(representative_index)
 
-    def cluster(self, threshold):
+    def get_average_value(self, label):
         """
-        Clusters the labels by interpreting the threshold as a lower
-        bound for cluster inclusion. The matrix is temporarily cast
-        to an adjacency matrix, with pairwise nodes above threshold
-        being placed into the same cluster.
-        :param threshold: the lower bound for cluster inclusion
+        Calculates the average pairwise distance from the query geneid
+        to every other member of the pham.
+        :param geneid: the anchoring (query) gene
         :return:
         """
-        # Step 0: clear any existing clusters
-        if len(self.clusters) > 0:
-            self.clusters = dict()
-        # Step 1: build an adjacency matrix
-        adj_mat = list()
+        index = self.get_index_from_label(label)
+        identities = self.get_row(index)
+        identities = [identities[i] for i in range(len(identities))
+                      if i != index]
+
+        if not identities:
+            return 0
+
+        return float(sum(identities))/len(identities)
+
+    def create_adjacency_map(self):
+        adj_map = dict.fromkeys(self.labels)
+        for cluster in adj_map.keys():
+            adj_map[cluster] = list()
+
         for i in range(self.size):
-            for j in range(i + 1, self.size):
-                if self.matrix[i][j] >= threshold:
-                    adj_mat.append({self.labels[i], self.labels[j]})
-        # Step 2: build connected components from adjacency matrix
-        while len(adj_mat) > 0:
-            anchor = adj_mat.pop(0)
-            cleanup = list()
-            for i, edge in enumerate(adj_mat):
-                if anchor.intersection(edge) > set():
-                    anchor = anchor.union(edge)
-                    cleanup.append(i)
-            # Check whether this component now overlaps an existing one
-            merged = False
-            for key, component in self.clusters.items():
-                if component.intersection(anchor) > set():
-                    self.clusters[key] = component.union(anchor)
-                    merged = True
-                    break
-            if not merged:
-                self.clusters[len(self.clusters) + 1] = anchor
-            for i in reversed(cleanup):
-                adj_mat.pop(i)
-        # Step 3: add any individual nodes that are not connected to others
-        used = set()
-        for key, value in self.clusters.items():
-            used = used.union(value)
-        missing = set(self.labels).difference(used)
-        for node in missing:
-            self.clusters[len(self.clusters) + 1] = {node}
+            if i == self.size - 1:
+                continue
 
-    def get_clusters(self, threshold):
-        """
-        Calls the `cluster` method with the indicated threshold, then
-        returns the resultant clusters
-        :param threshold: the lower bound for cluster inclusion
-        :return:
-        """
-        self.cluster(threshold)
-        return self.clusters
+            source = self.labels[i]
+            for j in range(i+1, self.size):
+                target = self.labels[j]
+                adj_map[source].append((target, self.get_cell(i, j)))
+                adj_map[target].append((source, self.get_cell(i, j)))
 
-    def extract_cluster_matrices(self):
-        """
-        Returns a list of (potentially) smaller SymmetricMatrix objects
-        each of whose contents comprise one cluster from this matrix's
-        data.
-        Assumes this matrix has already been clustered.
-        :return:
-        """
-        # If clustering already done, build and return cluster matrices
-        if len(self.clusters) > 0:
-            matrices = dict()
-            for cluster_key, cluster in self.clusters.items():
-                cluster = list(cluster)
-                cluster_matrix = SymmetricMatrix(cluster)
-                for x in range(len(cluster)):
-                    label1 = cluster[x]
-                    index1 = self.get_index_from_label(label1)
-                    for y in range(x + 1, len(cluster)):
-                        label2 = cluster[y]
-                        index2 = self.get_index_from_label(label2)
-                        cluster_matrix.fill_cell(x, y, self.get_cell(
-                                                            index1, index2))
-                cluster_matrix.fill_diagonal(100.0)
-                matrices[cluster_key] = cluster_matrix
-            return matrices
-        # Else raise ValueError
-        raise ValueError("cannot extract cluster matrices before clustering")
+        return adj_map
 
     def __repr__(self):
         s = f"{self.size}\n"
