@@ -1,3 +1,4 @@
+import queue
 from math import (sqrt, floor)
 
 from Bio.Phylo import BaseTree
@@ -59,7 +60,7 @@ def build_matrix_process(distance_function, subject, queries, row,
 
 # CLUSTERING ALGORITHMS
 # -----------------------------------------------------------------------------
-def greedy(matrix, threshold, return_matrix=False):
+def greedy(matrix, threshold, is_distance=True, return_matrix=False):
     """ Clusters by interpretting the threshold as a lower bound for cluster
     inclusion.
 
@@ -71,8 +72,12 @@ def greedy(matrix, threshold, return_matrix=False):
     adj_mat = list()
     for i in range(matrix.size):
         for j in range(i + 1, matrix.size):
-            if matrix.matrix[i][j] >= threshold:
-                adj_mat.append({matrix.labels[i], matrix.labels[j]})
+            if is_distance:
+                if matrix.matrix[i][j] <= threshold:
+                    adj_mat.append({matrix.labels[i], matrix.labels[j]})
+            else:
+                if matrix.matrix[i][j] >= threshold:
+                    adj_mat.append({matrix.labels[i], matrix.labels[j]})
     # Step 2: build connected components from adjacency matrix
     while len(adj_mat) > 0:
         anchor = adj_mat.pop(0)
@@ -110,34 +115,50 @@ def greedy(matrix, threshold, return_matrix=False):
     return clusters
 
 
-def upgma(matrix, iterations, metric="DB", return_matrix=False):
-    tree = create_upgma_tree(matrix)
+def upgma(matrix, iterations, metric="DB", is_distance=True,
+          return_matrix=False):
+    tree = create_upgma_tree(matrix, is_distance=is_distance)
 
     curr_clades = [x for x in tree.root.clades]
 
     clustering_scheme_map = dict()
-    for _ in range(iterations):
+    for i in range(iterations):
         clade_matricies = []
         clustering_scheme = {}
-        for i in range(len(curr_clades)):
-            clade = curr_clades[i]
+        for j in range(len(curr_clades)):
+            clade = curr_clades[j]
             if clade.matrix is None:
                 clade.matrix = clade_to_matrix(clade, matrix)
 
+            clustering_scheme[j+1] = clade.matrix.labels
+
+            if clade.matrix.size <= 1:
+                continue
             clade_matricies.append(clade.matrix)
-            clustering_scheme[i+1] = clade.matrix.labels
 
         if metric == "DB":
-            metric_val = calculate_DB_index(matrix, clade_matricies)
+            metric_val = calculate_DB_index(matrix, clade_matricies,
+                                            is_distance=is_distance)
 
-        clustering_scheme_map[len(curr_clades)] = (metric_val,
-                                                   clustering_scheme)
+        if metric in ["DB"]:
+            if metric_val == 0:
+                continue
 
-        if not split_weakest_clade(curr_clades):
+        outliers = [x[1][0] for x in clustering_scheme.items()
+                    if len(x[1]) <= 1]
+        clustering_scheme[len(clustering_scheme) + 1] = outliers
+
+        clustering_scheme_map[i] = (metric_val, clustering_scheme,
+                                    len(curr_clades))
+
+        if not split_weakest_clade(curr_clades, is_distance=is_distance):
             break
 
-    num_clusters, cluster_data = min(clustering_scheme_map.items(),
-                                     key=lambda x: x[1][0])
+    if metric in ["DB"]:
+        num_clusters, cluster_data = min(clustering_scheme_map.items(),
+                                         key=lambda x: x[1][0])
+    else:
+        raise
 
     clustering_scheme = cluster_data[1]
     if return_matrix:
@@ -151,9 +172,126 @@ def upgma(matrix, iterations, metric="DB", return_matrix=False):
     return clustering_scheme
 
 
+def greedy_upgma(matrix, iterations, threshold, metric="DB", is_distance=True,
+                 return_matrix=False):
+    greedy_scheme = greedy(matrix, threshold, return_matrix=True,
+                           is_distance=is_distance)
+
+    curr_clades = []
+    for cluster, submatrix in greedy_scheme.items():
+        tree = create_upgma_tree(submatrix, is_distance=is_distance)
+        curr_clades.append(tree.root)
+
+    clustering_scheme_map = dict()
+    for i in range(iterations):
+        clade_matricies = []
+        clustering_scheme = {}
+        for j in range(len(curr_clades)):
+            clade = curr_clades[j]
+            if clade.matrix is None:
+                clade.matrix = clade_to_matrix(clade, matrix)
+
+            if clade.matrix.size <= 1:
+                continue
+
+            clade_matricies.append(clade.matrix)
+            clustering_scheme[j+1] = clade.matrix.labels
+
+        if metric == "DB":
+            metric_val = calculate_DB_index(matrix, clade_matricies,
+                                            is_distance=is_distance)
+
+        if metric in ["DB"]:
+            if metric_val == 0:
+                continue
+
+        outliers = [x[1][0] for x in clustering_scheme.items()
+                    if len(x[1]) <= 1]
+        clustering_scheme[len(clustering_scheme) + 1] = outliers
+
+        clustering_scheme_map[i] = (metric_val, clustering_scheme,
+                                    len(curr_clades))
+
+        if not split_weakest_clade(curr_clades, is_distance=is_distance):
+            break
+
+    for num_clusters, cluster_data in clustering_scheme_map.items():
+        print(f"{cluster_data[2]}: {cluster_data[0]}")
+
+    if metric in ["DB"]:
+        num_clusters, cluster_data = min(clustering_scheme_map.items(),
+                                         key=lambda x: x[1][0])
+    else:
+        raise
+
+    clustering_scheme = cluster_data[1]
+    if return_matrix:
+        cluster_matricies = {}
+        for cluster, members in clustering_scheme.items():
+            cluster_matricies[cluster] = matrix.get_submatrix_from_labels(
+                                                                    members)
+
+        clustering_scheme = cluster_matricies
+
+    return clustering_scheme
+
+
+def dbscan(matrix, eps, minpts, is_distance=True):
+    counter = 0
+    cluster_lookup = dict()
+    for p_label in matrix.labels:
+        if cluster_lookup.get(p_label, -1) != -1:
+            continue
+
+        neighbors = matrix.get_nearest_neighbors(p_label, eps,
+                                                 is_distance=is_distance)
+        if len(neighbors) < minpts:
+            cluster_lookup[p_label] = None
+            continue
+
+        counter += 1
+        cluster_lookup[p_label] = counter
+
+        seeds = queue.Queue()
+
+        for q_label in neighbors:
+            seeds.put(q_label)
+
+        while not seeds.empty():
+            q_label = seeds.get()
+
+            neighbor_cluster = cluster_lookup.get(q_label, -1)
+            if neighbor_cluster is None:
+                cluster_lookup[q_label] = counter
+
+            if neighbor_cluster != -1:
+                continue
+
+            cluster_lookup[q_label] = counter
+            neighbors = matrix.get_nearest_neighbors(q_label, eps,
+                                                     is_distance=is_distance)
+            if len(neighbors) >= minpts:
+                for neighbor in neighbors:
+                    seeds.put(neighbor)
+
+    cluster_scheme = dict()
+    for label, cluster in cluster_lookup.items():
+        if cluster is None:
+            counter += 1
+            cluster_scheme[counter] = [label]
+            continue
+
+        cluster_members = cluster_scheme.get(cluster, list())
+        cluster_members.append(label)
+
+        cluster_scheme[cluster] = cluster_members
+
+    return cluster_scheme
+
+
 # CLUSTERING METRIC FUNCTIONS
 # -----------------------------------------------------------------------------
-def calculate_DB_index(matrix, submatricies):
+def calculate_DB_index(matrix, submatricies, is_distance=True):
     centroid_spread_map = {}
     for submatrix in submatricies:
         centroid = submatrix.get_centroid()
@@ -170,42 +308,55 @@ def calculate_DB_index(matrix, submatricies):
         if not adj_map:
             continue
 
-        nearest_centroid, dist = min(adj_map, key=lambda x: x[1])
+        if is_distance:
+            nearest_centroid, dist = min(adj_map, key=lambda x: x[1])
+        else:
+            nearest_centroid, dist = max(adj_map, key=lambda x: x[1])
 
-        db_sep = (float(spread + centroid_spread_map[nearest_centroid]) /
-                  float(dist))
+        if dist == 0:
+            db_sep = 1
+        else:
+            db_sep = (float(spread + centroid_spread_map[nearest_centroid]) /
+                      float(dist))
         db_index += db_sep
 
-    return db_index / len(centroid_spread_map)
+    db_index /= len(centroid_spread_map)
+    return db_index
 
 
 # UPGMA HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
-def create_upgma_tree(matrix):
+def create_upgma_tree(matrix, is_distance=True):
     adj_map = matrix.create_adjacency_map()
-    closest_pairs = create_closest_pairs(adj_map)
+    closest_pairs = create_closest_pairs(adj_map, is_distance=is_distance)
     clade_map = create_clade_map(adj_map)
 
     for i in range(matrix.size-2):
-        source, pair_edge = min(closest_pairs.items(), key=lambda x: x[1])
+        if is_distance:
+            source, pair_edge = min(closest_pairs.items(), key=lambda x: x[1])
+        else:
+            source, pair_edge = max(closest_pairs.items(), key=lambda x: x[1])
         merge_closest_edge(adj_map, clade_map, closest_pairs,
-                           (source, pair_edge[0]), pair_edge[1])
+                           (source, pair_edge[0]), pair_edge[1],
+                           is_distance=is_distance)
 
     unmerged_clusters = list(clade_map.keys())
     unmerged_clades = list(clade_map.values())
     if len(unmerged_clusters) > 1:
         branch_length = adj_map[unmerged_clusters[0]][unmerged_clusters[1]]
-    else:
-        branch_length = 0
 
-    root = BaseTree.Clade(branch_length=branch_length, clades=unmerged_clades)
+        root = BaseTree.Clade(branch_length=branch_length,
+                              clades=unmerged_clades)
+    else:
+        root = unmerged_clades[0]
+
     root.matrix = matrix
     tree = BaseTree.Tree(root=root, rooted=False)
 
     return tree
 
 
-def create_closest_pairs(adj_map):
+def create_closest_pairs(adj_map, is_distance=True):
     closest_pairs = dict()
     temp_adj_map = dict()
     for cluster, adj_list in adj_map.items():
@@ -219,9 +370,14 @@ def create_closest_pairs(adj_map):
         for link, value in adj_list:
             adj_dict[link] = value
 
-            if value < closest_value:
-                closest = link
-                closest_value = value
+            if is_distance:
+                if value < closest_value:
+                    closest = link
+                    closest_value = value
+            else:
+                if value > closest_value:
+                    closest = link
+                    closest_value = value
 
         closest_pairs[cluster] = (closest, value)
         temp_adj_map[cluster] = adj_dict
@@ -244,7 +400,7 @@ def create_clade_map(adj_map):
 
 
 def merge_closest_edge(adj_map, clade_map, closest_pairs, closest_pair,
-                       pair_value):
+                       pair_value, is_distance=True):
     source = closest_pair[0]
     merging = closest_pair[1]
     if closest_pair[1] < source:
@@ -264,13 +420,21 @@ def merge_closest_edge(adj_map, clade_map, closest_pairs, closest_pair,
 
         ccp = (cluster, closest_pairs[cluster][0])
         if source in ccp or merging in ccp:
-            closest_pairs[cluster] = min(adj_dict.items(), key=lambda x: x[1])
+            if is_distance:
+                closest_pairs[cluster] = min(adj_dict.items(),
+                                             key=lambda x: x[1])
+            else:
+                closest_pairs[cluster] = max(adj_dict.items(),
+                                             key=lambda x: x[1])
 
     adj_map.pop(merging)
     adj_map[source] = source_dict
 
     closest_pairs.pop(merging)
-    closest_pairs[source] = min(source_dict.items(), key=lambda x: x[1])
+    if is_distance:
+        closest_pairs[source] = min(source_dict.items(), key=lambda x: x[1])
+    else:
+        closest_pairs[source] = max(source_dict.items(), key=lambda x: x[1])
 
     merging_clade = clade_map.pop(merging)
     clade_map[source] = BaseTree.Clade(branch_length=pair_value,
@@ -288,7 +452,7 @@ def clade_to_matrix(clade, test_matrix):
     return test_matrix.get_submatrix_from_labels(leaf_names)
 
 
-def split_weakest_clade(clades):
+def split_weakest_clade(clades, is_distance=True):
     weakest_clade = None
     for clade in clades:
         if clade.is_terminal():
@@ -297,8 +461,12 @@ def split_weakest_clade(clades):
         if weakest_clade is None:
             weakest_clade = clade
 
-        if clade.branch_length > weakest_clade.branch_length:
-            weakest_clade = clade
+        if is_distance:
+            if clade.branch_length > weakest_clade.branch_length:
+                weakest_clade = clade
+        else:
+            if clade.branch_length < weakest_clade.branch_length:
+                weakest_clade = clade
 
     if weakest_clade is None:
         return False

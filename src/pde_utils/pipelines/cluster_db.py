@@ -1,5 +1,4 @@
 import argparse
-import math
 from pathlib import Path
 import shutil
 import string
@@ -311,26 +310,14 @@ def sketch_genomes(db_filter, working_dir, verbose=False, threads=1,
     return sketch_path_map
 
 
-def create_cluster_scheme(matrix, threshold):
-    greedy_scheme = clustering.greedy(matrix, threshold, return_matrix=True)
-
-    cluster_scheme = {}
-    cluster_count = 1
-    for cluster, submatrix in greedy_scheme.items():
-        upgma_scheme = clustering.upgma(submatrix,
-                                        int(math.sqrt(submatrix.size)))
-
-        for members in upgma_scheme.values():
-            cluster_scheme[cluster_count] = members
-            cluster_count += 1
-
-    return cluster_scheme
-
-
 def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
                 verbose=False, gcs=DEFAULT_SETTINGS["gcs"], evaluate=False,
                 cluster_prefix=None):
-    cluster_scheme = create_cluster_scheme(gcs_matrix, gcs)
+    # cluster_scheme = clustering.dbscan(gcs_matrix, gcs, 3,
+    #                                is_distance=False)
+
+    cluster_scheme = clustering.greedy_upgma(gcs_matrix, 1000, gcs,
+                                             is_distance=False)
 
     old_clusters = list(cluster_seqid_map.keys())
     cluster_scheme, old_cluster_histograms = name_clusters(
@@ -403,7 +390,8 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
         ani_matrix = calculate_ani_matrix(cluster_members, sketch_path_map,
                                           cores=threads, verbose=verbose)
 
-        subcluster_scheme = clustering.greedy(ani_matrix, ani)
+        subcluster_scheme = clustering.dbscan(ani_matrix, ani, 3,
+                                              is_distance=False)
         subcluster_scheme, old_subcluster_histogram = name_clusters(
                                         subcluster_scheme,
                                         altered_subcluster_lookup,
@@ -462,10 +450,12 @@ def gen_new_cluster(old_clusters, cluster_prefix=None):
             return new_cluster
 
         for i in range(len(counter)):
-            if counter[i] < (len(alphabet) - 1):
-                counter[i] += 1
+            if counter[len(counter)-1-i] < (len(alphabet) - 1):
+                counter[len(counter)-1-i] += 1
                 filled = False
                 break
+
+            counter[len(counter)-1-i] = 0
 
         if filled:
             chars += 1
@@ -557,31 +547,41 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
     full_data_lines = []
     quick_data_lines = []
 
+    total_avg = 0
     for new_cluster, new_cluster_members in cluster_scheme.items():
+        new_submatrix = matrix.get_submatrix_from_labels(
+                                                        new_cluster_members)
         old_cluster_histogram = old_cluster_histograms[new_cluster]
 
         full_data_lines.append(f"Cluster {new_cluster} changes:")
 
-        new_avg_gcs = get_average_intercluster_identity(matrix)
+        new_avg = get_average_intercluster_identity(new_submatrix)
+        total_avg += new_avg
 
         old_cluster_members = cluster_seqid_map.get(new_cluster)
         if old_cluster_members is None:
             line = "\n".join(textwrap.wrap("".join([
                     f"> New cluster {new_cluster} has an average of ",
-                    "{:.1f} % intercluster ".format(new_avg_gcs*100),
+                    "{:.1f} % intercluster ".format(new_avg*100),
                     metric]), width=75))
             full_data_lines.append(textwrap.indent(line, "\t"))
 
             for member in new_cluster_members:
+                old_cluster = cluster_lookup[member]
+                if old_cluster is None:
+                    old_cluster = "Singleton"
+
                 line = "\n".join(textwrap.wrap((
-                            f"* {member} [{cluster_lookup[member]}] "
+                            f"* {member} [{old_cluster}] "
                             f"was added to cluster {new_cluster}"), width=71))
                 full_data_lines.append(textwrap.indent(line, "\t\t"))
 
             quick_data_lines.append(f"Created {new_cluster}")
 
         else:
-            old_avg_gcs = get_average_intercluster_identity(matrix)
+            old_submatrix = matrix.get_submatrix_from_labels(
+                                                    old_cluster_members)
+            old_avg_gcs = get_average_intercluster_identity(old_submatrix)
 
             line = "\n".join(textwrap.wrap("".join([
                         f"> Cluster {new_cluster} genomes had an average of ",
@@ -597,8 +597,11 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
                 merged_cluster_members = set(
                                           added_cluster_members).intersection(
                                                 set(new_cluster_members))
+                merged_submatrix = matrix.get_submatrix_from_labels(
+                                                list(merged_cluster_members))
 
-                old_merged_avg_gcs = get_average_intercluster_identity(matrix)
+                old_merged_avg_gcs = get_average_intercluster_identity(
+                                                            merged_submatrix)
 
                 percent = (round(num_members / len(
                                  cluster_seqid_map[old_cluster]), 3) * 100)
@@ -608,7 +611,7 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
 
                     for merged_cluster_member in merged_cluster_members:
                         avg_int_gcs = get_intersecting_average_identity(
-                                            matrix, list(old_cluster_members),
+                                            matrix, list(new_cluster_members),
                                             [merged_cluster_member])
                         quick_data_lines.append(
                                     f"Added {new_cluster} <- "
@@ -630,9 +633,10 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
                 quick_data_lines.append(f"Merged {new_cluster} <- "
                                         f"{old_cluster} ({percent}%)")
 
-                line = "\n".join(textwrap.wrap((
-                                 f"* {percent}% of cluster {old_cluster} "
-                                 f"was merged into cluster {new_cluster}"),
+                line = "\n".join(textwrap.wrap(("".join([
+                                 "* {:.1f}% of ".format(percent),
+                                 f"cluster {old_cluster} ",
+                                 f"was merged into cluster {new_cluster}"])),
                                  width=71))
                 full_data_lines.append(textwrap.indent(line, "\t\t"))
 
@@ -643,7 +647,7 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
                 full_data_lines.append(textwrap.indent(line, "\t\t\t"))
 
                 avg_int_gcs = get_intersecting_average_identity(
-                                            matrix, list(old_cluster_members),
+                                            matrix, list(new_cluster_members),
                                             list(merged_cluster_members))
                 if avg_int_gcs is not None:
                     line = "\n".join(textwrap.wrap("".join([
@@ -655,22 +659,31 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
 
             line = "\n".join(textwrap.wrap("".join([
                         f"> Reclustered {new_cluster} has an average of ",
-                        "{:.1f} % intercluster ".format(new_avg_gcs*100),
+                        "{:.1f} % intercluster ".format(new_avg*100),
                         metric]), width=75))
             full_data_lines.append(textwrap.indent(line, "\t"))
 
         full_data_lines.append("")
+
+    total_avg /= len(cluster_scheme)
 
     if (not full_data_lines) and (not quick_data_lines):
         return
 
     filepath = working_dir.joinpath("log.txt")
     with filepath.open(mode="w") as filehandle:
+        filehandle.write("pde_utils genome clustering pipeline\n")
+        filehandle.write("".join(["=" * 79, "\n"]))
+        filehandle.write(f"Total number of clusters: {len(cluster_scheme)}\n")
+        filehandle.write("".join([
+                                f"New total intercluster {metric} ",
+                                "average: {:.1f} %\n".format(total_avg*100)]))
+        filehandle.write("\n\n")
+
         filehandle.write("Quick summary:\n")
         filehandle.write("".join(["=" * 79, "\n"]))
         for line in quick_data_lines:
             filehandle.write("".join([line, "\n"]))
-
         filehandle.write("\n\n")
 
         filehandle.write("Full summary:\n")

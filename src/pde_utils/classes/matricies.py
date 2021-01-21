@@ -149,6 +149,44 @@ class SymmetricMatrix:
 
         return float(sum(identities))/len(identities)
 
+    def get_nearest_neighbors(self, label, threshold, is_distance=True):
+        """
+        Scans the query's row in the percent identity matrix to find
+        all target nodes with values >= threshold. Returns the list
+        in descending order (highest identity first).
+        :param label: the anchoring geneid
+        :type query: str
+        :param threshold: the percent value threshold for inclusion
+        in the return list
+        :type threshold: int, float
+        :return: neighbors
+        :rtype: list
+        """
+        # Get the query row (or throw an error if the node name is invalid)
+        query_index = self.get_index_from_label(label)
+        query_row = self.get_row(query_index)
+
+        # Iterate over the row - store node names where identity > threshold
+        neighbor_data = list()
+        for i in range(len(query_row)):
+            # Skip the self-match
+            if i == query_index:
+                continue
+            value = query_row[i]
+            if is_distance:
+                if value <= threshold:
+                    neighbor_data.append((self.get_label_from_index(i), value))
+            else:
+                if value >= threshold:
+                    neighbor_data.append((self.get_label_from_index(i), value))
+
+        # Order from highest to lowest identity
+        reverse = (not is_distance)
+        neighbor_data.sort(key=lambda x: x[1], reverse=reverse)
+        neighbors = [data[0] for data in neighbor_data]
+
+        return neighbors
+
     def create_adjacency_map(self):
         adj_map = dict.fromkeys(self.labels)
         for cluster in adj_map.keys():
