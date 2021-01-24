@@ -1,11 +1,13 @@
 import argparse
+import decimal
+import math
 from pathlib import Path
 import shutil
 import string
 import textwrap
 import time
 
-from pdm_utils.functions import (basic, configfile, multithread, parallelize,
+from pdm_utils.functions import (configfile, multithread, parallelize,
                                  fileio as pdm_fileio, pipelines_basic)
 from pdm_utils.pipelines.revise import TICKET_HEADER
 
@@ -216,13 +218,15 @@ def execute_cluster_db(
 
         elif pipeline == "cluster":
             if verbose:
-                print("Reclustering database genomes...")
+                print("Clustering database genomes...")
             cluster_scheme = gcs_cluster(
                                     mapped_path, gcs_matrix,
                                     cluster_metadata[0], cluster_metadata[1],
                                     gcs=gcs, evaluate=evaluate,
-                                    verbose=verbose,
+                                    cores=threads, verbose=verbose,
                                     cluster_prefix=cluster_prefix)
+
+            return
 
             if subcluster:
                 sketch_path_map = sketch_genomes(db_filter, temp_dir,
@@ -258,7 +262,7 @@ def query_cluster_metadata(db_filter):
             subcluster_lookup)
 
 
-# MATRIX HELPER FUNCTIONS
+# CLUSTERING HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 def calculate_gcs_matrix(alchemist, phage_ids, cores=1, verbose=False):
     if verbose:
@@ -310,41 +314,153 @@ def sketch_genomes(db_filter, working_dir, verbose=False, threads=1,
     return sketch_path_map
 
 
-def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
-                verbose=False, gcs=DEFAULT_SETTINGS["gcs"], evaluate=False,
-                cluster_prefix=None):
-    # cluster_scheme = clustering.dbscan(gcs_matrix, gcs, 3,
-    #                                is_distance=False)
+def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
+               E=-0.5, M=0.5):
+    if verbose:
+        print("...First clustering iteration...")
+    first_scheme = clustering.dbscan(matrix, eps, 1,
+                                     is_distance=is_distance,
+                                     return_matrix=True)
 
-    cluster_scheme = clustering.greedy_upgma(gcs_matrix, 1000, gcs,
-                                             is_distance=False)
+    cluster_counter = 0
+    second_scheme = dict()
+    work_items = []
+    for greedy_cluster, submatrix in first_scheme.items():
+        if greedy_cluster is None or submatrix.size <= 1:
+            noise = second_scheme.get(None, list())
+            second_scheme[None] = noise + submatrix.labels
+            continue
+
+        work_items.append((submatrix, is_distance, E, M))
+
+    print("...Second clustering iteration...")
+    second_schemes = parallelize.parallelize(
+                            work_items, cores, second_iter_cluster_process,
+                            verbose=verbose)
+
+    for scheme in second_schemes:
+        for cluster, cluster_members in scheme.items():
+            if cluster is None:
+                noise = second_scheme.get(None, list())
+                second_scheme[None] = noise + cluster_members
+                continue
+
+            cluster_counter += 1
+            second_scheme[cluster_counter] = cluster_members
+
+    return second_scheme
+
+
+def second_iter_cluster_process(submatrix, is_distance, E, M):
+    mean = submatrix.get_matrix_average()
+    std_dev = submatrix.get_matrix_std_dev(mean)
+    eps = mean + (std_dev * E)
+
+    size = submatrix.size
+    minpts = int(round((math.sqrt(size) * M), 0))
+    if minpts < 1:
+        minpts = 1
+
+    print(minpts)
+    second_iter_scheme = clustering.dbscan(submatrix, eps,
+                                           minpts, is_distance=is_distance)
+
+    return second_iter_scheme
+
+
+def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
+                cores=1, verbose=False, gcs=DEFAULT_SETTINGS["gcs"],
+                evaluate=False, cluster_prefix=None):
+    cluster_scheme = cluster_db(gcs_matrix, gcs, cores=cores, verbose=verbose,
+                                is_distance=False)
+
+    # TEST CODE
+    # =========================================================================
+    # new_cluster_lookup = {}
+    # for cluster, cluster_members in cluster_scheme.items():
+    #    for member in cluster_members:
+    #        new_cluster_lookup[member] = cluster
+
+    # for cluster in cluster_seqid_map.keys():
+    #    print(f"Old cluster {cluster}")
+
+    #    new_cluster_set = set()
+    #    for cluster_member in cluster_seqid_map[cluster]:
+    #        new_cluster_set.add(new_cluster_lookup[cluster_member])
+
+    #    print(f"\tEnded up in {new_cluster_set}")
+
+    # shutil.rmtree(working_dir)
+    # return
+    # =========================================================================
+    # TEST CODE
 
     old_clusters = list(cluster_seqid_map.keys())
-    cluster_scheme, old_cluster_histograms = name_clusters(
-                                            cluster_scheme, cluster_lookup,
-                                            old_clusters, verbose=verbose,
-                                            cluster_prefix=cluster_prefix)
+    cluster_redistributions = get_cluster_redistributions(
+                                cluster_scheme, cluster_lookup, old_clusters)
 
-    altered_cluster_scheme = {}
-    for cluster, cluster_members in cluster_scheme.items():
-        if (((cluster not in cluster_seqid_map.keys()) or
-             len(old_cluster_histograms[cluster]) > 1)
-                and cluster is not None):
-            altered_cluster_scheme[cluster] = cluster_members
+    cluster_scheme = assign_cluster_names(
+                                cluster_scheme, cluster_redistributions,
+                                verbose=verbose, cluster_prefix=cluster_prefix)
+
+    # TEST CODE
+    # =========================================================================
+    # new_cluster_lookup = {}
+    # for cluster, cluster_members in cluster_scheme.items():
+    #    for member in cluster_members:
+    #        new_cluster_lookup[member] = cluster
+
+    # stable_old_clusters = set(cluster_seqid_map.keys())
+    # new_clusters = set(cluster_scheme.keys())
+    # diff_clusters = stable_old_clusters.difference(new_clusters)
+
+    # for cluster in diff_clusters:
+    #     print(f"Neglected cluster {cluster}")
+
+    #    new_cluster_set = set()
+    #    for cluster_member in cluster_seqid_map[cluster]:
+    #        new_cluster_set.add(new_cluster_lookup[cluster_member])
+
+    #    print(f"\tEnded up in {new_cluster_set}")
+
+    # shutil.rmtree(working_dir)
+    # return
+    # =========================================================================
+    # TEST CODE
+
+    scheme_alterations = diff_cluster_schemes(cluster_scheme, cluster_lookup)
 
     wrote_eval = False
     if evaluate:
-        wrote_eval = evaluate_clustering(
-                            working_dir, gcs_matrix, altered_cluster_scheme,
-                            old_cluster_histograms, cluster_lookup,
-                            cluster_seqid_map, "gene content similarity")
+        new_matrix_cache = dict()
+
+        if verbose:
+            print("Evaluating clustering scheme...")
+        scheme_metadata = evaluate_clustering_scheme(
+                            gcs_matrix, cluster_scheme,
+                            matrix_cache=new_matrix_cache,
+                            cores=cores, verbose=verbose)
+
+        old_scheme_metadata = evaluate_clustering_scheme(
+                            gcs_matrix, cluster_seqid_map,
+                            cores=cores)
+
+        alteration_metadata = evaluate_scheme_alteration(
+                            gcs_matrix, cluster_scheme, cluster_seqid_map,
+                            scheme_alterations)
+
+        write_clustering_evaluation(working_dir, scheme_metadata,
+                                    old_scheme_metadata, alteration_metadata,
+                                    "gene content similarity")
 
     wrote_ticket = write_clustering_update_ticket(
-                                     working_dir, cluster_lookup,
-                                     altered_cluster_scheme, field="Cluster")
+                                     working_dir, scheme_alterations,
+                                     field="Cluster")
 
     wrote = wrote_eval or wrote_ticket
     if not wrote:
+        if verbose:
+            print("No changes made to current clustering scheme.")
         shutil.rmtree(working_dir)
 
     return cluster_scheme
@@ -392,7 +508,7 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
 
         subcluster_scheme = clustering.dbscan(ani_matrix, ani, 3,
                                               is_distance=False)
-        subcluster_scheme, old_subcluster_histogram = name_clusters(
+        subcluster_scheme, old_subcluster_histogram = assign_cluster_names(
                                         subcluster_scheme,
                                         altered_subcluster_lookup,
                                         list(old_subclusters),
@@ -426,6 +542,69 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
 
         if not wrote:
             shutil.rmtree(subcluster_dir)
+
+
+def calculate_ani(subject_path, query_path):
+    mash_output = alignment.mash_dist(subject_path, query_path)
+    ani_data = mash_output.split("\t")
+
+    if len(ani_data) == 5:
+        return 1 - float(ani_data[2])
+
+
+# CLUSTER-NAMING HELPER FUNCTIONS
+# -----------------------------------------------------------------------------
+def assign_cluster_names(cluster_scheme, cluster_redistributions,
+                         verbose=False, cluster_prefix=None, subcluster=None):
+    named_scheme = dict()
+    named_scheme[None] = cluster_scheme[None]
+
+    old_clusters = list(cluster_redistributions.keys())
+
+    remaining = list([x for x in cluster_scheme.keys() if x is not None])
+    assigned = list()
+
+    for old_cluster, cluster_redistribution in cluster_redistributions.items():
+        if old_cluster is None:
+            continue
+
+        old_cluster_inheretors = sorted(cluster_redistribution.items(),
+                                        key=lambda x: len(x[1]), reverse=True)
+
+        for old_cluster_inheretor in old_cluster_inheretors:
+            num_cluster = old_cluster_inheretor[0]
+            if num_cluster is None:
+                continue
+
+            if num_cluster in assigned:
+                continue
+
+            named_scheme[old_cluster] = cluster_scheme[num_cluster]
+            remaining.remove(num_cluster)
+            assigned.append(num_cluster)
+            break
+
+    for num_cluster in remaining:
+        if subcluster is not None:
+            new_subcluster = gen_new_subcluster(subcluster, old_clusters)
+            named_scheme[new_subcluster] = cluster_scheme[num_cluster]
+
+            if verbose:
+                print(f"......Created new subcluster '{new_subcluster}'...")
+
+            continue
+
+        new_cluster = gen_new_cluster(old_clusters,
+                                      cluster_prefix=cluster_prefix)
+        named_scheme[new_cluster] = cluster_scheme[num_cluster]
+
+        old_clusters.append(new_cluster)
+        assigned.append(num_cluster)
+
+        if verbose:
+            print(f"...Created new cluster '{new_cluster}'...")
+
+    return named_scheme
 
 
 def gen_new_cluster(old_clusters, cluster_prefix=None):
@@ -470,202 +649,237 @@ def gen_new_subcluster(cluster, old_subclusters):
             return subcluster
 
 
-def calculate_ani(subject_path, query_path):
-    mash_output = alignment.mash_dist(subject_path, query_path)
-    ani_data = mash_output.split("\t")
+# CLUSTERING EVALUATION HELPER FUNCTIONS
+# -----------------------------------------------------------------------------
+def evaluate_clustering_scheme(matrix, cluster_scheme, cores=1, verbose=False,
+                               matrix_cache=None):
+    if matrix_cache is None:
+        matrix_cache = dict()
 
-    if len(ani_data) == 5:
-        return 1 - float(ani_data[2])
+    work_items = []
+    for cluster, cluster_members in cluster_scheme.items():
+        if cluster is None:
+            continue
 
+        cluster_matrix = matrix_cache.get(cluster)
 
-def name_clusters(cluster_scheme, cluster_lookup, old_clusters,
-                  verbose=False, cluster_prefix=None, subcluster=None):
-    old_cluster_histograms = {}
-    new_cluster_scheme = {}
-    for tmp_cluster_name, cluster_members in cluster_scheme.items():
-        old_cluster_histogram = {}
-        for cluster_member in cluster_members:
-            old_cluster = cluster_lookup[cluster_member]
+        if cluster_matrix is None:
+            cluster_matrix = matrix.get_submatrix_from_labels(
+                                            cluster_scheme[cluster])
 
-            num_cluster = old_cluster_histogram.get(old_cluster, 0)
-            num_cluster += 1
-            old_cluster_histogram[old_cluster] = num_cluster
+        work_items.append((cluster, cluster_matrix))
 
-        old_clusters_histogram = basic.sort_histogram(old_cluster_histogram)
-        merging_old_clusters = list(old_clusters_histogram.keys())
-        new_cluster = merging_old_clusters[0]
+    evaluations = parallelize.parallelize(work_items, cores,
+                                          cluster_evaluation_subprocess,
+                                          verbose=verbose)
 
-        if len(cluster_members) > 1:
-            if new_cluster is None:
-                if len(merging_old_clusters) > 1:
-                    for old_cluster in merging_old_clusters[1:]:
-                        new_cluster = old_cluster
-
-                        if (new_cluster is not None and
-                                new_cluster not in new_cluster_scheme.keys()
-                                and new_cluster in old_clusters):
-                            break
-
-            if ((new_cluster is None) or
-                (new_cluster in new_cluster_scheme.keys()) or
-                    (new_cluster not in old_clusters)):
-                if subcluster is None:
-                    new_cluster = gen_new_cluster(
-                                            old_clusters,
-                                            cluster_prefix=cluster_prefix)
-                    if verbose:
-                        print(f"...Created new cluster '{new_cluster}'...")
-
-                    old_clusters.append(new_cluster)
-
-                elif len(cluster_scheme) > 1:
-                    new_cluster = gen_new_subcluster(subcluster,
-                                                     old_clusters)
-                    if verbose:
-                        print(f"...Created new subcluster '{new_cluster}'...")
-
-                    old_clusters.append(new_cluster)
-
-            if subcluster is not None and len(cluster_scheme) <= 1:
-                new_cluster = None
-
-        else:
-            new_cluster = None
-
-        temp_cluster_members = new_cluster_scheme.get(new_cluster, list())
-
-        new_cluster_scheme[new_cluster] = (temp_cluster_members +
-                                           list(cluster_members))
-        old_cluster_histograms[new_cluster] = old_cluster_histogram
-
-    return (new_cluster_scheme, old_cluster_histograms)
+    return {data[0]: data[1] for data in evaluations}
 
 
-def evaluate_clustering(working_dir, matrix, cluster_scheme,
-                        old_cluster_histograms, cluster_lookup,
-                        cluster_seqid_map, metric):
+def cluster_evaluation_subprocess(cluster, matrix):
+    data = dict()
+
+    data["centroid"] = matrix.get_centroid()
+    data["spread"] = matrix.get_average_value(data["centroid"])
+    data["average_value"] = matrix.get_matrix_average()
+    data["standard_deviation"] = matrix.get_matrix_std_dev(
+                                                    data["average_value"])
+    data["num_members"] = matrix.size
+
+    return cluster, data
+
+
+def evaluate_scheme_alteration(matrix, cluster_scheme, old_cluster_scheme,
+                               scheme_alterations):
+    scheme_alteration_metadata = dict()
+    for cluster, cluster_alteration_data in scheme_alterations.items():
+
+        altered_cluster_metadata = dict()
+        for change in cluster_alteration_data:
+            old_cluster_data = altered_cluster_metadata.get(
+                                                    change["old_cluster"],
+                                                    dict())
+
+            alterations = old_cluster_data.get("alterations", list())
+            alterations.append(change)
+            old_cluster_data["alterations"] = alterations
+
+            members = old_cluster_data.get("old_members", list())
+            members.append(change["id"])
+            old_cluster_data["old_members"] = members
+
+            altered_cluster_metadata[change["old_cluster"]] = old_cluster_data
+
+        for old_cluster, old_cluster_data in altered_cluster_metadata.items():
+            old_cluster_data["percent_merged"] = decimal.Decimal(
+                                        len(old_cluster_data["old_members"]) /
+                                        len(old_cluster_scheme[old_cluster]))
+
+        scheme_alteration_metadata[cluster] = altered_cluster_metadata
+
+    return scheme_alteration_metadata
+
+
+def diff_cluster_schemes(cluster_scheme, cluster_lookup):
+    scheme_alterations = dict()
+
+    for new_cluster, cluster_members in cluster_scheme.items():
+        for member in cluster_members:
+            old_cluster = cluster_lookup[member]
+            if new_cluster != old_cluster:
+                altered_data = scheme_alterations.get(new_cluster, list())
+                data = dict()
+                data["id"] = member
+                data["old_cluster"] = old_cluster
+                data["new_cluster"] = new_cluster
+
+                altered_data.append(data)
+                scheme_alterations[new_cluster] = altered_data
+
+    return scheme_alterations
+
+
+def get_cluster_redistributions(cluster_scheme, cluster_lookup, old_clusters):
+    cluster_redistributions = dict()
+
+    for cluster_num, cluster_members in cluster_scheme.items():
+        for member in cluster_members:
+            old_cluster = cluster_lookup.get(member)
+
+            cluster_redistribution = cluster_redistributions.get(
+                                                        old_cluster, dict())
+
+            distributed_members = cluster_redistribution.get(
+                                                        cluster_num, list())
+            distributed_members.append(member)
+
+            cluster_redistribution[cluster_num] = distributed_members
+            cluster_redistributions[old_cluster] = cluster_redistribution
+
+    cluster_redistribution_weights = list()
+    for old_cluster, cluster_redistribution in cluster_redistributions.items():
+        weight = 0
+        for new_cluster, cluster_members in cluster_redistribution.items():
+            weight += len(cluster_members)
+
+        cluster_redistribution_weights.append((old_cluster, weight))
+
+    cluster_redistribution_weights.sort(key=lambda x: x[1], reverse=True)
+
+    cluster_redistributions = {
+                cluster: cluster_redistributions[cluster]
+                for cluster, weight in cluster_redistribution_weights}
+
+    return cluster_redistributions
+
+
+# WRITING FUNCTIONS
+# -----------------------------------------------------------------------------
+def write_clustering_evaluation(working_dir, scheme_metadata,
+                                old_scheme_metadata, alteration_metadata,
+                                metric):
     full_data_lines = []
     quick_data_lines = []
 
-    total_avg = 0
-    for new_cluster, new_cluster_members in cluster_scheme.items():
-        new_submatrix = matrix.get_submatrix_from_labels(
-                                                        new_cluster_members)
-        old_cluster_histogram = old_cluster_histograms[new_cluster]
+    total_old_avg = 0
+    total_old_clusters = 0
+    for old_cluster, old_scheme_data in old_scheme_metadata.items():
+        if old_cluster is None:
+            continue
 
-        full_data_lines.append(f"Cluster {new_cluster} changes:")
+        total_old_clusters += 1
+        total_old_avg += old_scheme_data["average_value"]
 
-        new_avg = get_average_intercluster_identity(new_submatrix)
-        total_avg += new_avg
+    if total_old_clusters >= 0:
+        total_old_avg /= total_old_clusters
+    else:
+        total_old_avg = 0
 
-        old_cluster_members = cluster_seqid_map.get(new_cluster)
-        if old_cluster_members is None:
-            line = "\n".join(textwrap.wrap("".join([
-                    f"> New cluster {new_cluster} has an average of ",
-                    "{:.1f} % intercluster ".format(new_avg*100),
-                    metric]), width=75))
-            full_data_lines.append(textwrap.indent(line, "\t"))
+    total_new_avg = 0
+    total_new_clusters = 0
+    for new_cluster, new_scheme_data in scheme_metadata.items():
+        if new_cluster is None:
+            continue
 
-            for member in new_cluster_members:
-                old_cluster = cluster_lookup[member]
+        new_scheme_data = scheme_metadata.get(new_cluster)
+
+        total_new_clusters += 1
+        total_new_avg += new_scheme_data["average_value"]
+
+    if total_new_clusters >= 0:
+        total_new_avg /= total_new_clusters
+    else:
+        total_new_avg = 0
+
+    for new_cluster, alteration_data in alteration_metadata.items():
+        new_scheme_data = scheme_metadata.get(new_cluster, None)
+        old_scheme_data = old_scheme_metadata.get(new_cluster, None)
+
+        if new_scheme_data is not None:
+            new_avg = new_scheme_data["average_value"]
+
+            full_data_lines.append(f"Cluster {new_cluster} changes:")
+            if old_scheme_data is None:
+                line = "\n".join(textwrap.wrap("".join([
+                        f"> New cluster {new_cluster} has an average of ",
+                        "{:.1f} % intercluster ".format(new_avg*100),
+                        metric]), width=75))
+                full_data_lines.append(textwrap.indent(line, "\t"))
+                quick_data_lines.append(f"Created {new_cluster}")
+            else:
+                old_avg_gcs = old_scheme_data["average_value"]
+
+                line = "\n".join(textwrap.wrap("".join([
+                            f"> Cluster {new_cluster} genomes had an average ",
+                            "of {:.1f}% intercluster ".format(old_avg_gcs*100),
+                            metric]), width=75))
+                full_data_lines.append(textwrap.indent(line, "\t"))
+
+                line = "\n".join(textwrap.wrap("".join([
+                            f"> Reclustered {new_cluster} has an average of ",
+                            "{:.1f} % intercluster ".format(new_avg*100),
+                            metric]), width=75))
+                full_data_lines.append(textwrap.indent(line, "\t"))
+
+        for old_cluster, old_cluster_redist_data in alteration_data.items():
+            percent = old_cluster_redist_data["percent_merged"] * 100
+            if percent < 30 or old_cluster is None:
                 if old_cluster is None:
                     old_cluster = "Singleton"
 
-                line = "\n".join(textwrap.wrap((
-                            f"* {member} [{old_cluster}] "
-                            f"was added to cluster {new_cluster}"), width=71))
-                full_data_lines.append(textwrap.indent(line, "\t\t"))
-
-            quick_data_lines.append(f"Created {new_cluster}")
-
-        else:
-            old_submatrix = matrix.get_submatrix_from_labels(
-                                                    old_cluster_members)
-            old_avg_gcs = get_average_intercluster_identity(old_submatrix)
-
-            line = "\n".join(textwrap.wrap("".join([
-                        f"> Cluster {new_cluster} genomes had an average of ",
-                        "{:.1f}% intercluster ".format(old_avg_gcs*100),
-                        metric]), width=75))
-            full_data_lines.append(textwrap.indent(line, "\t"))
-
-            for old_cluster, num_members in old_cluster_histogram.items():
-                if new_cluster == old_cluster:
-                    continue
-
-                added_cluster_members = cluster_seqid_map[old_cluster]
-                merged_cluster_members = set(
-                                          added_cluster_members).intersection(
-                                                set(new_cluster_members))
-                merged_submatrix = matrix.get_submatrix_from_labels(
-                                                list(merged_cluster_members))
-
-                old_merged_avg_gcs = get_average_intercluster_identity(
-                                                            merged_submatrix)
-
-                percent = (round(num_members / len(
-                                 cluster_seqid_map[old_cluster]), 3) * 100)
-                if percent < 50 or old_cluster is None:
-                    if old_cluster is None:
-                        old_cluster = "Singleton"
-
-                    for merged_cluster_member in merged_cluster_members:
-                        avg_int_gcs = get_intersecting_average_identity(
-                                            matrix, list(new_cluster_members),
-                                            [merged_cluster_member])
-                        quick_data_lines.append(
-                                    f"Added {new_cluster} <- "
-                                    f"{merged_cluster_member} [{old_cluster}]")
+                for member in old_cluster_redist_data["old_members"]:
+                    if new_cluster is not None:
+                        quick_data_lines.append(f"Added {new_cluster} <- "
+                                                f"{member} [{old_cluster}]")
 
                         line = "\n".join(textwrap.wrap((
-                            f"* {merged_cluster_member} [{old_cluster}] "
+                            f"* {member} [{old_cluster}] "
                             f"was added to cluster {new_cluster}"), width=71))
                         full_data_lines.append(textwrap.indent(line, "\t\t"))
+                    else:
+                        quick_data_lines.append(
+                                        f"Labelled {member} [{old_cluster}] "
+                                        "as noise")
+                continue
 
-                        line = "\n".join(textwrap.wrap("".join([
-                         f"- {merged_cluster_member} has an ",
-                         "average of {:.1f}% ".format(avg_int_gcs*100),
-                         metric,
-                         f" with cluster {new_cluster} genomes"]), width=67))
-                        full_data_lines.append(textwrap.indent(line, "\t\t\t"))
-                    continue
-
-                quick_data_lines.append(f"Merged {new_cluster} <- "
-                                        f"{old_cluster} ({percent}%)")
+            if new_cluster is not None:
+                quick_data_lines.append(
+                                f"Merged {new_cluster} <- "
+                                f"{old_cluster} ({round(percent, 1)}%)")
 
                 line = "\n".join(textwrap.wrap(("".join([
-                                 "* {:.1f}% of ".format(percent),
-                                 f"cluster {old_cluster} ",
-                                 f"was merged into cluster {new_cluster}"])),
-                                 width=71))
+                                "* {:.1f}% of ".format(percent),
+                                f"cluster {old_cluster} ",
+                                f"was merged into cluster {new_cluster}"])),
+                                width=71))
+
                 full_data_lines.append(textwrap.indent(line, "\t\t"))
-
-                line = "\n".join(textwrap.wrap("".join([
-                        f"- Cluster {old_cluster} genomes had an average of ",
-                        "{:.1f}% intercluster ".format(old_merged_avg_gcs*100),
-                        metric]), width=67))
-                full_data_lines.append(textwrap.indent(line, "\t\t\t"))
-
-                avg_int_gcs = get_intersecting_average_identity(
-                                            matrix, list(new_cluster_members),
-                                            list(merged_cluster_members))
-                if avg_int_gcs is not None:
-                    line = "\n".join(textwrap.wrap("".join([
-                            f"- Merged cluster {old_cluster} genomes have an ",
-                            "average of {:.1f}% ".format(avg_int_gcs*100),
-                            f"{metric} with cluster ",
-                            f"{new_cluster} genomes"]), width=67))
-                    full_data_lines.append(textwrap.indent(line, "\t\t\t"))
-
-            line = "\n".join(textwrap.wrap("".join([
-                        f"> Reclustered {new_cluster} has an average of ",
-                        "{:.1f} % intercluster ".format(new_avg*100),
-                        metric]), width=75))
-            full_data_lines.append(textwrap.indent(line, "\t"))
+            else:
+                quick_data_lines.append(
+                            f"Labelled {round(percent, 1)}% of {old_cluster} "
+                            "as noise")
 
         full_data_lines.append("")
-
-    total_avg /= len(cluster_scheme)
 
     if (not full_data_lines) and (not quick_data_lines):
         return
@@ -674,10 +888,15 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
     with filepath.open(mode="w") as filehandle:
         filehandle.write("pde_utils genome clustering pipeline\n")
         filehandle.write("".join(["=" * 79, "\n"]))
-        filehandle.write(f"Total number of clusters: {len(cluster_scheme)}\n")
+        filehandle.write(
+                    f"Previous number of clusters: {total_old_clusters}\n")
+        filehandle.write(f"Total number of clusters: {total_new_clusters}\n")
         filehandle.write("".join([
-                                f"New total intercluster {metric} ",
-                                "average: {:.1f} %\n".format(total_avg*100)]))
+                            f"Old total intercluster {metric} ",
+                            "average: {:.1f} %\n".format(total_old_avg*100)]))
+        filehandle.write("".join([
+                            f"New total intercluster {metric} ",
+                            "average: {:.1f} %\n".format(total_new_avg*100)]))
         filehandle.write("\n\n")
 
         filehandle.write("Quick summary:\n")
@@ -694,26 +913,24 @@ def evaluate_clustering(working_dir, matrix, cluster_scheme,
     return True
 
 
-def write_clustering_update_ticket(working_dir, cluster_lookup,
-                                   cluster_scheme, field="Cluster",
-                                   filename=None):
+def write_clustering_update_ticket(working_dir, scheme_alterations,
+                                   field="Cluster", filename=None):
     if filename is None:
         filename = working_dir.with_suffix(".csv").name
     update_dicts = []
 
-    for cluster, cluster_members in cluster_scheme.items():
-        for member in cluster_members:
-            if cluster != cluster_lookup[member]:
-                update_dict = {}
+    for cluster, diff_data in scheme_alterations.items():
+        for data_dict in diff_data:
+            update_dict = {}
 
-                if cluster is None:
-                    cluster = "NULL"
+            if cluster is None:
+                cluster = "NULL"
 
-                update_data = ["phage", field, cluster, "PhageID", member]
-                for i in range(len(TICKET_HEADER)):
-                    update_dict[TICKET_HEADER[i]] = update_data[i]
+            update_data = ("phage", field, cluster, "PhageID", data_dict["id"])
+            for i in range(len(TICKET_HEADER)):
+                update_dict[TICKET_HEADER[i]] = update_data[i]
 
-                update_dicts.append(update_dict)
+            update_dicts.append(update_dict)
 
     if not update_dicts:
         return False
@@ -724,6 +941,59 @@ def write_clustering_update_ticket(working_dir, cluster_lookup,
 
     return True
 
+
+def write_genome_fastas(gs_and_ts, fasta_dir, verbose=False, threads=1):
+    if verbose:
+        print("Writing genome fasta files...")
+
+    work_items = []
+    fasta_path_map = {}
+    for seq_id, seq in gs_and_ts:
+        seq_path = fasta_dir.joinpath("".join([seq_id, ".fasta"]))
+        fasta_path_map[seq_id] = seq_path
+
+        work_items.append(({seq_id: seq.decode("utf-8")}, seq_path))
+
+    multithread.multithread(work_items, threads, pdm_fileio.write_fasta,
+                            verbose=verbose)
+
+    return fasta_path_map
+
+
+def sketch_genome_fastas(fasta_path_map, sketch_dir, verbose=False,
+                         threads=1, kmer=DEFAULT_SETTINGS["kmer"],
+                         sketch=DEFAULT_SETTINGS["sketch"]):
+    if verbose:
+        print("Sketching genome fasta files...")
+
+    work_items = []
+    sketch_path_map = {}
+    for seq_id, fasta_path in fasta_path_map.items():
+        sketch_path = sketch_dir.joinpath(f"{seq_id}.msh")
+        sketch_path_map[seq_id] = sketch_path
+
+        work_items.append((fasta_path, sketch_path, kmer, sketch))
+
+    parallelize.parallelize(work_items, threads, alignment.mash_sketch,
+                            verbose=verbose)
+
+    return sketch_path_map
+
+
+# MISC FUNCTIONS
+# -----------------------------------------------------------------------------
+def create_temp_path(temp_path):
+    temp_dir = Path(temp_path)
+
+    if temp_dir.is_dir():
+        shutil.rmtree(temp_dir)
+
+    temp_dir.mkdir()
+    return temp_dir
+
+
+# DILAPIDATED FUNCTIONS
+# -----------------------------------------------------------------------------
 
 def get_average_intercluster_identity(matrix):
     centroid = matrix.get_centroid()
@@ -767,54 +1037,6 @@ def write_cluster_analysis(intracluster_edges, working_dir, file_name=None):
     filepath = working_dir.joinpath(file_name).with_suffix(".csv")
     pdm_fileio.export_data_dict(data_dicts, filepath, CLUSTER_ANALYSIS_HEADER,
                                 include_headers=True)
-
-
-def create_temp_path(temp_path):
-    temp_dir = Path(temp_path)
-
-    if temp_dir.is_dir():
-        shutil.rmtree(temp_dir)
-
-    temp_dir.mkdir()
-    return temp_dir
-
-
-def write_genome_fastas(gs_and_ts, fasta_dir, verbose=False, threads=1):
-    if verbose:
-        print("Writing genome fasta files...")
-
-    work_items = []
-    fasta_path_map = {}
-    for seq_id, seq in gs_and_ts:
-        seq_path = fasta_dir.joinpath("".join([seq_id, ".fasta"]))
-        fasta_path_map[seq_id] = seq_path
-
-        work_items.append(({seq_id: seq.decode("utf-8")}, seq_path))
-
-    multithread.multithread(work_items, threads, pdm_fileio.write_fasta,
-                            verbose=verbose)
-
-    return fasta_path_map
-
-
-def sketch_genome_fastas(fasta_path_map, sketch_dir, verbose=False,
-                         threads=1, kmer=DEFAULT_SETTINGS["kmer"],
-                         sketch=DEFAULT_SETTINGS["sketch"]):
-    if verbose:
-        print("Sketching genome fasta files...")
-
-    work_items = []
-    sketch_path_map = {}
-    for seq_id, fasta_path in fasta_path_map.items():
-        sketch_path = sketch_dir.joinpath(f"{seq_id}.msh")
-        sketch_path_map[seq_id] = sketch_path
-
-        work_items.append((fasta_path, sketch_path, kmer, sketch))
-
-    parallelize.parallelize(work_items, threads, alignment.mash_sketch,
-                            verbose=verbose)
-
-    return sketch_path_map
 
 
 def retrieve_intracluster_edges(db_filter, working_dir, node_names, matrix,

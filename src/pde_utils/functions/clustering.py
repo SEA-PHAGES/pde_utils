@@ -236,7 +236,7 @@ def greedy_upgma(matrix, iterations, threshold, metric="DB", is_distance=True,
     return clustering_scheme
 
 
-def dbscan(matrix, eps, minpts, is_distance=True):
+def dbscan(matrix, eps, minpts, is_distance=True, return_matrix=False):
     counter = 0
     cluster_lookup = dict()
     for p_label in matrix.labels:
@@ -276,15 +276,17 @@ def dbscan(matrix, eps, minpts, is_distance=True):
 
     cluster_scheme = dict()
     for label, cluster in cluster_lookup.items():
-        if cluster is None:
-            counter += 1
-            cluster_scheme[counter] = [label]
-            continue
-
         cluster_members = cluster_scheme.get(cluster, list())
         cluster_members.append(label)
 
         cluster_scheme[cluster] = cluster_members
+
+    if return_matrix:
+        cluster_matricies = {}
+        for cluster, cluster_members in cluster_scheme.items():
+            cluster_matricies[cluster] = matrix.get_submatrix_from_labels(
+                                                        list(cluster_members))
+        cluster_scheme = cluster_matricies
 
     return cluster_scheme
 

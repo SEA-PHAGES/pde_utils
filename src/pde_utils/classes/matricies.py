@@ -1,3 +1,4 @@
+import math
 import numpy as np
 
 
@@ -57,13 +58,18 @@ class SymmetricMatrix:
                              f"matrix of size {self.size}")
         return self.matrix[row][col]
 
-    def get_row(self, index):
+    def get_row(self, index, exclude_diagonal=False):
         """
         Returns a copy of the requested matrix row.
         :param index: index of the row to be returned
         :return: copy of self.__matrix__[index]
         """
-        return self.matrix[index][:]
+        row = self.matrix[index][:]
+
+        if exclude_diagonal:
+            row = np.delete(row, index)
+
+        return row
 
     def get_index_from_label(self, label):
         """
@@ -140,14 +146,36 @@ class SymmetricMatrix:
         :return:
         """
         index = self.get_index_from_label(label)
-        identities = self.get_row(index)
-        identities = [identities[i] for i in range(len(identities))
-                      if i != index]
+        values = self.get_row(index, exclude_diagonal=True)
 
-        if not identities:
+        if len(values) < 1:
             return 0
 
-        return float(sum(identities))/len(identities)
+        return float(sum(values))/len(values)
+
+    def get_matrix_average(self):
+        mean = 0
+        for label in self.labels:
+            mean += self.get_average_value(label)
+
+        mean /= self.size
+
+        return mean
+
+    def get_matrix_std_dev(self, mean):
+        std_dev = 0
+
+        if self.size == 1:
+            return std_dev
+
+        for i in range(self.size):
+            values = self.get_row(i, exclude_diagonal=True)
+            for value in values:
+                std_dev += (value - mean) ** 2
+
+        std_dev /= (self.size * (self.size - 1))
+        std_dev = math.sqrt(std_dev)
+        return std_dev
 
     def get_nearest_neighbors(self, label, threshold, is_distance=True):
         """
