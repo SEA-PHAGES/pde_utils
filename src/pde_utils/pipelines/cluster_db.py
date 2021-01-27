@@ -226,8 +226,6 @@ def execute_cluster_db(
                                     cores=threads, verbose=verbose,
                                     cluster_prefix=cluster_prefix)
 
-            return
-
             if subcluster:
                 sketch_path_map = sketch_genomes(db_filter, temp_dir,
                                                  verbose=verbose)
@@ -236,7 +234,7 @@ def execute_cluster_db(
                     print("Subclustering database genomes...")
                 ani_subcluster(mapped_path, sketch_path_map, cluster_scheme,
                                cluster_metadata[0], cluster_metadata[1],
-                               cluster_metadata[2],
+                               cluster_metadata[2], cores=threads,
                                verbose=verbose, ani=ani, evaluate=evaluate)
 
                 empty = True
@@ -361,7 +359,6 @@ def second_iter_cluster_process(submatrix, is_distance, E, M):
     if minpts < 1:
         minpts = 1
 
-    print(minpts)
     second_iter_scheme = clustering.dbscan(submatrix, eps,
                                            minpts, is_distance=is_distance)
 
@@ -449,7 +446,8 @@ def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
                             gcs_matrix, cluster_scheme, cluster_seqid_map,
                             scheme_alterations)
 
-        write_clustering_evaluation(working_dir, scheme_metadata,
+        wrote_eval = write_clustering_evaluation(
+                                    working_dir, scheme_metadata,
                                     old_scheme_metadata, alteration_metadata,
                                     "gene content similarity")
 
@@ -469,16 +467,21 @@ def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
 def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
                    cluster_lookup, cluster_seqid_map,
                    subcluster_lookup,
-                   threads=1, verbose=False, ani=DEFAULT_SETTINGS["ani"],
+                   cores=1, verbose=False, ani=DEFAULT_SETTINGS["ani"],
                    evaluate=False):
 
     for cluster, cluster_members in cluster_scheme.items():
         if cluster is None:
             continue
-        old_cluster_members = cluster_seqid_map.get(cluster, list())
 
-        noncluster_members = [x for x in cluster_members
-                              if x not in old_cluster_members]
+        cluster_members_set = set(cluster_members)
+        old_cluster_members = set(cluster_seqid_map.get(cluster, list()))
+        noncluster_members = list(cluster_members_set.difference(
+                                                        old_cluster_members))
+
+        old_cluster_members = list(old_cluster_members.intersection(
+                                                    cluster_members_set))
+        noncluster_members = list(noncluster_members)
 
         old_subclusters = set()
         subcluster_seqid_map = {}
@@ -496,46 +499,63 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
             nonmember_cluster = cluster_lookup[nonmember]
             altered_subcluster_lookup[nonmember] = nonmember_cluster
 
-            seqids = subcluster_seqid_map.get(nonmember_cluster, list())
+            seqids = subcluster_seqid_map.get(None, list())
             seqids.append(nonmember)
-            subcluster_seqid_map[nonmember_cluster] = seqids
+            subcluster_seqid_map[None] = seqids
 
         if verbose:
             print(f"Subclustering {cluster}...")
 
         ani_matrix = calculate_ani_matrix(cluster_members, sketch_path_map,
-                                          cores=threads, verbose=verbose)
+                                          cores=cores, verbose=verbose)
 
-        subcluster_scheme = clustering.dbscan(ani_matrix, ani, 3,
-                                              is_distance=False)
-        subcluster_scheme, old_subcluster_histogram = assign_cluster_names(
-                                        subcluster_scheme,
-                                        altered_subcluster_lookup,
-                                        list(old_subclusters),
-                                        subcluster=cluster, verbose=verbose)
+        subcluster_scheme = cluster_db(ani_matrix, ani, cores=cores,
+                                       verbose=verbose, is_distance=False)
 
-        altered_subcluster_scheme = {}
-        for subcluster, subcluster_members in subcluster_scheme.items():
-            if ((subcluster not in old_subclusters or
-                 len(old_subcluster_histogram[subcluster]) > 1)
-                    and subcluster is not None):
-                altered_subcluster_scheme[subcluster] = subcluster_members
+        subcluster_redistributions = get_cluster_redistributions(
+                                            subcluster_scheme,
+                                            altered_subcluster_lookup,
+                                            old_subclusters)
+
+        subcluster_scheme = assign_cluster_names(
+                                            subcluster_scheme,
+                                            subcluster_redistributions,
+                                            verbose=verbose,
+                                            subcluster=cluster)
+
+        scheme_alterations = diff_cluster_schemes(subcluster_scheme,
+                                                  altered_subcluster_lookup)
 
         subcluster_dir = working_dir.joinpath(str(cluster))
         pipelines_basic.create_working_dir(subcluster_dir)
 
         wrote_ticket = write_clustering_update_ticket(
-                                subcluster_dir, subcluster_lookup,
-                                subcluster_scheme, field="Subcluster")
+                                subcluster_dir, scheme_alterations,
+                                field="Subcluster")
 
         wrote_eval = False
         if evaluate:
-            wrote_eval = evaluate_clustering(
-                                subcluster_dir, ani_matrix,
-                                altered_subcluster_scheme,
-                                old_subcluster_histogram,
-                                altered_subcluster_lookup,
-                                subcluster_seqid_map,
+            new_matrix_cache = dict()
+
+            if verbose:
+                print(f"...Evaluating cluster {cluster} "
+                      "subclustering scheme...")
+            scheme_metadata = evaluate_clustering_scheme(
+                                ani_matrix, subcluster_scheme,
+                                matrix_cache=new_matrix_cache,
+                                cores=cores, verbose=verbose)
+
+            old_scheme_metadata = evaluate_clustering_scheme(
+                                ani_matrix, subcluster_seqid_map,
+                                cores=cores)
+
+            alteration_metadata = evaluate_scheme_alteration(
+                                ani_matrix, subcluster_scheme,
+                                subcluster_seqid_map, scheme_alterations)
+
+            write_clustering_evaluation(
+                                subcluster_dir, scheme_metadata,
+                                old_scheme_metadata, alteration_metadata,
                                 "average nucleotide identity")
 
         wrote = wrote_eval or wrote_ticket
@@ -557,7 +577,7 @@ def calculate_ani(subject_path, query_path):
 def assign_cluster_names(cluster_scheme, cluster_redistributions,
                          verbose=False, cluster_prefix=None, subcluster=None):
     named_scheme = dict()
-    named_scheme[None] = cluster_scheme[None]
+    named_scheme[None] = cluster_scheme.pop(None, list())
 
     old_clusters = list(cluster_redistributions.keys())
 
@@ -586,6 +606,10 @@ def assign_cluster_names(cluster_scheme, cluster_redistributions,
 
     for num_cluster in remaining:
         if subcluster is not None:
+            if len(cluster_scheme) <= 1:
+                named_scheme[None] = cluster_scheme[num_cluster]
+                continue
+
             new_subcluster = gen_new_subcluster(subcluster, old_clusters)
             named_scheme[new_subcluster] = cluster_scheme[num_cluster]
 
@@ -790,7 +814,7 @@ def write_clustering_evaluation(working_dir, scheme_metadata,
         total_old_clusters += 1
         total_old_avg += old_scheme_data["average_value"]
 
-    if total_old_clusters >= 0:
+    if total_old_clusters > 0:
         total_old_avg /= total_old_clusters
     else:
         total_old_avg = 0
@@ -806,7 +830,7 @@ def write_clustering_evaluation(working_dir, scheme_metadata,
         total_new_clusters += 1
         total_new_avg += new_scheme_data["average_value"]
 
-    if total_new_clusters >= 0:
+    if total_new_clusters > 0:
         total_new_avg /= total_new_clusters
     else:
         total_new_avg = 0
