@@ -15,6 +15,10 @@ class SymmetricMatrix:
         self.size = len(labels)
         self.matrix = np.zeros((self.size, self.size), float)
 
+        self.mean = None
+        self.median = None
+        self.SD = None
+
     def fill_diagonal(self, value):
         """
         Fills the matrix diagonal with the input value (e.g. 1 or 100
@@ -116,7 +120,10 @@ class SymmetricMatrix:
             for j in range(i+1, len(indicies)):
                 query = indicies[j]
 
-                submatrix.fill_cell(i, j, self.get_cell(subject, query))
+                value = self.matrix[subject][query]
+
+                submatrix.matrix[i][j] = value
+                submatrix.matrix[j][i] = value
 
     def get_centroid(self):
         """
@@ -138,7 +145,7 @@ class SymmetricMatrix:
                                                     max(avg_pws_identities))
             return self.get_label_from_index(representative_index)
 
-    def get_average_value(self, label):
+    def get_average_edge(self, label):
         """
         Calculates the average pairwise distance from the query geneid
         to every other member of the pham.
@@ -153,20 +160,76 @@ class SymmetricMatrix:
 
         return float(sum(values))/len(values)
 
-    def get_matrix_average(self):
+    def set_mean(self, is_distance=True):
         mean = 0
         for label in self.labels:
-            mean += self.get_average_value(label)
+            mean += self.get_average_edge(label)
 
         mean /= self.size
+        self.mean = mean
+        return
 
-        return mean
+        mean = 0
 
-    def get_matrix_std_dev(self, mean):
+        if self.size <= 1:
+            if is_distance:
+                self.mean = 0
+            else:
+                self.mean = 1
+            return
+
+        edges = 0
+        for i in range(self.size):
+            if i == self.size - 1:
+                continue
+
+            for j in range(i+1, self.size):
+                mean += self.matrix[i][j]
+                edges += 1
+
+        mean /= edges
+        self.mean = mean
+
+    def get_mean(self):
+        if self.mean is None:
+            self.set_mean()
+
+        return self.mean
+
+    def set_median(self):
+        values = list()
+
+        for i in range(self.size):
+            values += list(self.get_row(i, exclude_diagonal=True))
+
+        if len(values) <= 1:
+            self.median = 0
+            return
+
+        values.sort()
+
+        median_index = int(math.floor(len(values) / 2))
+        self.median = values[median_index]
+
+    def get_median(self):
+        if self.median is None:
+            self.set_median()
+
+        return self.median
+
+    def set_SD(self):
         std_dev = 0
 
         if self.size == 1:
-            return std_dev
+            self.SD = std_dev
+            return
+
+        std_dev = 0
+        mean = self.get_mean()
+
+        if self.size <= 1:
+            self.SD = std_dev
+            return
 
         for i in range(self.size):
             values = self.get_row(i, exclude_diagonal=True)
@@ -175,7 +238,39 @@ class SymmetricMatrix:
 
         std_dev /= (self.size * (self.size - 1))
         std_dev = math.sqrt(std_dev)
-        return std_dev
+        self.SD = std_dev
+
+    def get_SD(self):
+        if self.SD is None:
+            self.set_SD()
+
+        return self.SD
+
+    def standardize(self, metric="z_score"):
+        mean = self.get_mean()
+        std_dev = self.get_SD()
+
+        std_symm_matrix = SymmetricMatrix(self.labels)
+
+        if std_dev > 0:
+            std_matrix = np.zeros((self.size, self.size), float)
+            for i in range(self.size):
+                if i == self.size - 1:
+                    continue
+
+                for j in range(i+1, self.size):
+                    value = self.matrix[i][j]
+                    if metric == "z_score":
+                        value = (float(value) - float(mean)) / float(std_dev)
+
+                    std_matrix[i][j] = value
+                    std_matrix[j][i] = value
+
+            std_symm_matrix.matrix = std_matrix
+        else:
+            std_symm_matrix.matrix = self.matrix
+
+        return std_symm_matrix
 
     def get_nearest_neighbors(self, label, threshold, is_distance=True):
         """

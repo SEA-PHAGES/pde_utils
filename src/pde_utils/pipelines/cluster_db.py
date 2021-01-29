@@ -313,7 +313,7 @@ def sketch_genomes(db_filter, working_dir, verbose=False, threads=1,
 
 
 def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
-               E=-0.5, M=0.5):
+               S=1, M=0.5):
     if verbose:
         print("...First clustering iteration...")
     first_scheme = clustering.dbscan(matrix, eps, 1,
@@ -329,9 +329,10 @@ def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
             second_scheme[None] = noise + submatrix.labels
             continue
 
-        work_items.append((submatrix, is_distance, E, M))
+        work_items.append((submatrix, is_distance, S, M))
 
-    print("...Second clustering iteration...")
+    if verbose:
+        print("...Second clustering iteration...")
     second_schemes = parallelize.parallelize(
                             work_items, cores, second_iter_cluster_process,
                             verbose=verbose)
@@ -349,13 +350,18 @@ def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
     return second_scheme
 
 
-def second_iter_cluster_process(submatrix, is_distance, E, M):
-    mean = submatrix.get_matrix_average()
-    std_dev = submatrix.get_matrix_std_dev(mean)
-    eps = mean + (std_dev * E)
+def second_iter_cluster_process(submatrix, is_distance, S, M):
+    mean = submatrix.get_mean()
+    std_dev = submatrix.get_SD()
+
+    standard_submatrix = submatrix.standardize(metric="z_score")
+    std_mean = standard_submatrix.get_mean()
+    std_median = standard_submatrix.get_median()
+
+    eps = mean + ((std_median - std_mean) * S * std_dev)
 
     size = submatrix.size
-    minpts = int(round((math.sqrt(size) * M), 0))
+    minpts = int(round((math.log10(size) * M), 0))
     if minpts < 1:
         minpts = 1
 
@@ -704,10 +710,9 @@ def cluster_evaluation_subprocess(cluster, matrix):
     data = dict()
 
     data["centroid"] = matrix.get_centroid()
-    data["spread"] = matrix.get_average_value(data["centroid"])
-    data["average_value"] = matrix.get_matrix_average()
-    data["standard_deviation"] = matrix.get_matrix_std_dev(
-                                                    data["average_value"])
+    data["spread"] = matrix.get_average_edge(data["centroid"])
+    data["average_value"] = matrix.get_mean()
+    data["standard_deviation"] = matrix.get_SD()
     data["num_members"] = matrix.size
 
     return cluster, data

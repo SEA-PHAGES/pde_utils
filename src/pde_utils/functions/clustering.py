@@ -297,7 +297,7 @@ def calculate_DB_index(matrix, submatricies, is_distance=True):
     centroid_spread_map = {}
     for submatrix in submatricies:
         centroid = submatrix.get_centroid()
-        centroid_spread_map[centroid] = submatrix.get_average_value(centroid)
+        centroid_spread_map[centroid] = submatrix.get_average_edge(centroid)
 
     centroid_matrix = matrix.get_submatrix_from_labels(list(
                                                 centroid_spread_map.keys()))
