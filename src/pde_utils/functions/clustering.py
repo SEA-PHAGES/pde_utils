@@ -172,18 +172,25 @@ def upgma(matrix, iterations, metric="DB", is_distance=True,
     return clustering_scheme
 
 
-def greedy_upgma(matrix, iterations, threshold, metric="DB", is_distance=True,
-                 return_matrix=False):
-    greedy_scheme = greedy(matrix, threshold, return_matrix=True,
-                           is_distance=is_distance)
+def upgma_merge(matrix, submatricies, metric="DB",
+                is_distance=True, return_matrix=False):
+    clade_centroid_map = {}
+    for submatrix in submatricies:
+        subclade = create_upgma_tree(submatrix, is_distance=is_distance).root
+        clade_centroid_map[submatrix.get_centroid()] = subclade
 
-    curr_clades = []
-    for cluster, submatrix in greedy_scheme.items():
-        tree = create_upgma_tree(submatrix, is_distance=is_distance)
-        curr_clades.append(tree.root)
+    centroid_matrix = matrix.get_submatrix_from_labels(list(
+                                                clade_centroid_map.keys()))
+    centroid_tree = create_upgma_tree(centroid_matrix, is_distance=is_distance)
+    centroid_root = centroid_tree.root
+    for leaf in centroid_root.get_terminals():
+        leaf.clades = clade_centroid_map[leaf.name].clades
+        leaf.branch_length = clade_centroid_map[leaf.name].branch_length
+
+    curr_clades = [x for x in centroid_root.clades]
 
     clustering_scheme_map = dict()
-    for i in range(iterations):
+    for i in range(len(submatricies) - 1):
         clade_matricies = []
         clustering_scheme = {}
         for j in range(len(curr_clades)):
@@ -200,6 +207,7 @@ def greedy_upgma(matrix, iterations, threshold, metric="DB", is_distance=True,
         if metric == "DB":
             metric_val = calculate_DB_index(matrix, clade_matricies,
                                             is_distance=is_distance)
+            print(metric_val)
 
         if metric in ["DB"]:
             if metric_val == 0:
@@ -214,9 +222,6 @@ def greedy_upgma(matrix, iterations, threshold, metric="DB", is_distance=True,
 
         if not split_weakest_clade(curr_clades, is_distance=is_distance):
             break
-
-    for num_clusters, cluster_data in clustering_scheme_map.items():
-        print(f"{cluster_data[2]}: {cluster_data[0]}")
 
     if metric in ["DB"]:
         num_clusters, cluster_data = min(clustering_scheme_map.items(),
@@ -291,6 +296,61 @@ def dbscan(matrix, eps, minpts, is_distance=True, return_matrix=False):
     return cluster_scheme
 
 
+def lloyds(matrix, centroids, is_distance=True, return_matrix=False):
+    cent_indicies = set()
+    for centroid in centroids:
+        cent_indicies.add(matrix.get_index_from_label(centroid))
+
+    clustering_scheme = dict()
+    while True:
+        cent_lookup = dict()
+        for i, cent_index in enumerate(cent_indicies):
+            clustering_scheme[(i+1)] = [matrix.get_label_from_index(
+                                                                cent_index)]
+            cent_lookup[cent_index] = (i + 1)
+
+        for i in range(matrix.size):
+            if i in cent_indicies:
+                continue
+
+            if is_distance:
+                closest_func = min
+            else:
+                closest_func = max
+
+            closest_centroid = closest_func([cent for cent in cent_indicies],
+                                            key=lambda x: matrix.matrix[i][x])
+
+            cluster = cent_lookup[closest_centroid]
+            clustering_scheme[cluster].append(matrix.get_label_from_index(i))
+
+        scheme_matricies = dict()
+        new_cent_indicies = set()
+        for cluster, cluster_members in clustering_scheme.items():
+            cluster_members.sort()
+            submatrix = matrix.get_submatrix_from_labels(cluster_members)
+            scheme_matricies[cluster] = submatrix
+
+            new_cent_indicies.add(matrix.get_index_from_label(
+                                                    submatrix.get_centroid()))
+
+        diff_indicies = new_cent_indicies.difference(cent_indicies)
+        if not diff_indicies:
+            break
+        else:
+            if 91 in diff_indicies or 92 in diff_indicies:
+                print(scheme_matricies[2])
+                print(matrix.get_label_from_index(91))
+                print(matrix.get_label_from_index(92))
+
+        cent_indicies = new_cent_indicies
+
+    if return_matrix:
+        return scheme_matricies
+
+    return clustering_scheme
+
+
 # CLUSTERING METRIC FUNCTIONS
 # -----------------------------------------------------------------------------
 def calculate_DB_index(matrix, submatricies, is_distance=True):
@@ -324,6 +384,14 @@ def calculate_DB_index(matrix, submatricies, is_distance=True):
 
     db_index /= len(centroid_spread_map)
     return db_index
+
+
+def calculate_silhouette(matrix, submatricies, is_distance=True):
+    centroid_index_submatrix_map = {}
+    for submatrix in submatricies:
+        centroid = submatrix.get_centroid()
+        centroid_index = matrix.get_index_from_label(centroid)
+        centroid_index_submatrix_map[centroid_index] = submatrix
 
 
 # UPGMA HELPER FUNCTIONS

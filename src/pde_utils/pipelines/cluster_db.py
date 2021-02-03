@@ -21,7 +21,9 @@ DEFAULT_FOLDER_NAME = (f"{time.strftime('%Y%m%d')}_cluster_db")
 TEMP_DIR = (f"/tmp/{DEFAULT_FOLDER_NAME}_temp")
 
 CLUSTER_DB_SUBPIPELINES = ["analyze", "cluster"]
-DEFAULT_SETTINGS = {"kmer": 15, "sketch": 25000, "gcs": 0.35, "ani": 0.7}
+DEFAULT_SETTINGS = {"kmer": 15, "sketch": 25000, "gcs": 0.35, "ani": 0.7,
+                    "gcsmax": 0.90, "animax": 0.95, "gcsS": 0.8, "gcsM": 2,
+                    "aniS": 0, "aniM": 1}
 
 CLUSTER_ANALYSIS_HEADER = ["Subject PhageID", "Subject Cluster",
                            "Query PhageID", "Query Cluster", "GCS",
@@ -45,7 +47,10 @@ def main(unparsed_args_list):
                        sketch=args.sketch_size,
                        gcs=args.gene_content_similarity_min,
                        ani=args.average_nucleotide_identity_min,
-                       evaluate=args.dump_evaluation,
+                       gcsmax=args.gene_content_similarity_max,
+                       animax=args.average_nucleotide_identity_max,
+                       gcsS=args.gcsS, gcsM=args.gcsM, aniS=args.aniS,
+                       aniM=args.aniM, evaluate=args.dump_evaluation,
                        mat_out=args.distmat_out, subcluster=args.subcluster,
                        cluster_prefix=args.cluster_prefix)
 
@@ -107,6 +112,21 @@ def parse_cluster_db(unparsed_args_list):
         phage genome gene content similarity.
             Follow selection argument with the desired percentage [0-1]
         """
+    AVERAGE_NUCLEOTIDE_IDENTITY_MIN_HELP = """
+        Cluster DB option to change the lower threshold for analyses of
+        phage genome average nucleotide identity.
+            Follow selection argument with the desired percentage [0-1]
+        """
+    GENE_CONTENT_SIMILARITY_MAX_HELP = """
+        Cluster DB option to change the upper threshold for analyses of
+        phage genome gene content similarity.
+            Follow selection argument with the desired percentage [0-1]
+        """
+    AVERAGE_NUCLEOTIDE_IDENTITY_MAX_HELP = """
+        Cluster DB option to change the upper threshold for analyses of
+        phage genome average nucleotide identity.
+            Follow selection argument with the desired percentage [0-1]
+        """
     KMER_SIZE_HELP = """
         Cluster DB option to change the k-mer size that determines
         the building block of the hashes used to estimate ANI.
@@ -117,6 +137,15 @@ def parse_cluster_db(unparsed_args_list):
         min-hashes used to calculate ANI.
             Follow selection argument with the desired sketch size.
         """
+    GENE_CONTENT_SIMILARITY_EPS_MODIFIER_HELP = """
+        """
+    GENE_CONTENT_SIMILARITY_MINPTS_MODIFIER_HELP = """
+        """
+    AVERAGE_NUCLEOTIDE_IDENTITY_EPS_MODIFIER_HELP = """
+        """
+    AVERAGE_NUCLEOTIDE_IDENTITY_MINPTS_MODIFIER_HELP = """
+        """
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument("database", type=str, help=DATABASE_HELP)
@@ -146,11 +175,28 @@ def parse_cluster_db(unparsed_args_list):
                         help=KMER_SIZE_HELP)
     parser.add_argument("-sketch", "--sketch_size", type=int,
                         help=SKETCH_SIZE_HELP)
+
     parser.add_argument("-gcs", "--gene_content_similarity_min",
                         type=float,
                         help=GENE_CONTENT_SIMILARITY_MIN_HELP)
     parser.add_argument("-ani", "--average_nucleotide_identity_min",
-                        type=float)
+                        type=float,
+                        help=AVERAGE_NUCLEOTIDE_IDENTITY_MIN_HELP)
+    parser.add_argument("-gcsmax", "--gene_content_similarity_max",
+                        type=float,
+                        help=GENE_CONTENT_SIMILARITY_MAX_HELP)
+    parser.add_argument("-animax", "--average_nucleotide_identity_max",
+                        type=float,
+                        help=AVERAGE_NUCLEOTIDE_IDENTITY_MAX_HELP)
+
+    parser.add_argument("-gcsS", type=float,
+                        help=GENE_CONTENT_SIMILARITY_EPS_MODIFIER_HELP)
+    parser.add_argument("-gcsM", type=float,
+                        help=GENE_CONTENT_SIMILARITY_MINPTS_MODIFIER_HELP)
+    parser.add_argument("-aniS", type=float,
+                        help=AVERAGE_NUCLEOTIDE_IDENTITY_EPS_MODIFIER_HELP)
+    parser.add_argument("-aniM", type=float,
+                        help=AVERAGE_NUCLEOTIDE_IDENTITY_MINPTS_MODIFIER_HELP)
 
     parser.add_argument("-mat", "--distmat_out", action="store_true")
     parser.add_argument("-eval", "--dump_evaluation", action="store_true")
@@ -165,6 +211,12 @@ def parse_cluster_db(unparsed_args_list):
                     sketch_size=DEFAULT_SETTINGS["sketch"],
                     gene_content_similarity_min=DEFAULT_SETTINGS["gcs"],
                     average_nucleotide_identity_min=DEFAULT_SETTINGS["ani"],
+                    gene_content_similarity_max=DEFAULT_SETTINGS["gcsmax"],
+                    average_nucleotide_identity_max=DEFAULT_SETTINGS["animax"],
+                    gcsS=DEFAULT_SETTINGS["gcsS"],
+                    gcsM=DEFAULT_SETTINGS["gcsM"],
+                    aniS=DEFAULT_SETTINGS["aniS"],
+                    aniM=DEFAULT_SETTINGS["aniM"],
                     cluster_prefix=None)
 
     parsed_args = parser.parse_args(unparsed_args_list[2:])
@@ -172,12 +224,16 @@ def parse_cluster_db(unparsed_args_list):
 
 
 def execute_cluster_db(
-                alchemist, pipeline="cluster", folder_path=None,
+                alchemist, folder_path=None,
                 folder_name=DEFAULT_FOLDER_NAME, values=None, verbose=None,
                 filters="", groups=[], threads=1,
                 kmer=DEFAULT_SETTINGS["kmer"],
                 sketch=DEFAULT_SETTINGS["sketch"],
                 gcs=DEFAULT_SETTINGS["gcs"], ani=DEFAULT_SETTINGS["ani"],
+                gcsmax=DEFAULT_SETTINGS["gcsmax"],
+                animax=DEFAULT_SETTINGS["animax"],
+                gcsS=DEFAULT_SETTINGS["gcsS"], gcsM=DEFAULT_SETTINGS["gcsM"],
+                aniS=DEFAULT_SETTINGS["aniS"], aniM=DEFAULT_SETTINGS["aniM"],
                 mat_out=False, evaluate=False, subcluster=False,
                 cluster_prefix=None):
     db_filter = pipelines_basic.build_filter(alchemist, "phage", filters,
@@ -206,43 +262,35 @@ def execute_cluster_db(
                                           verbose=verbose, cores=threads)
 
         pipelines_basic.create_working_dir(mapped_path)
-        if pipeline == "analyze":
-            intracluster_edges = retrieve_intracluster_edges(
-                                        db_filter, temp_dir,
-                                        db_filter.values, gcs_matrix,
-                                        cluster_metadata[0], threads=threads,
-                                        verbose=verbose, kmer=kmer,
-                                        sketch=sketch, gcs=gcs)
 
-            write_cluster_analysis(intracluster_edges, mapped_path)
+        if verbose:
+            print("Clustering database genomes...")
+        cluster_scheme = gcs_cluster(
+                                mapped_path, gcs_matrix,
+                                cluster_metadata[0], cluster_metadata[1],
+                                gcs=gcs, gcsmax=gcsmax, S=gcsS, M=gcsM,
+                                evaluate=evaluate, cores=threads,
+                                verbose=verbose,
+                                cluster_prefix=cluster_prefix)
 
-        elif pipeline == "cluster":
+        if subcluster:
+            sketch_path_map = sketch_genomes(db_filter, temp_dir,
+                                             verbose=verbose)
+
             if verbose:
-                print("Clustering database genomes...")
-            cluster_scheme = gcs_cluster(
-                                    mapped_path, gcs_matrix,
-                                    cluster_metadata[0], cluster_metadata[1],
-                                    gcs=gcs, evaluate=evaluate,
-                                    cores=threads, verbose=verbose,
-                                    cluster_prefix=cluster_prefix)
+                print("Subclustering database genomes...")
+            ani_subcluster(mapped_path, sketch_path_map, cluster_scheme,
+                           cluster_metadata[0], cluster_metadata[1],
+                           cluster_metadata[2], cores=threads,
+                           verbose=verbose, ani=ani, animax=animax,
+                           evaluate=evaluate)
 
-            if subcluster:
-                sketch_path_map = sketch_genomes(db_filter, temp_dir,
-                                                 verbose=verbose)
+            empty = True
+            for _ in mapped_path.iterdir():
+                empty = False
 
-                if verbose:
-                    print("Subclustering database genomes...")
-                ani_subcluster(mapped_path, sketch_path_map, cluster_scheme,
-                               cluster_metadata[0], cluster_metadata[1],
-                               cluster_metadata[2], cores=threads,
-                               verbose=verbose, ani=ani, evaluate=evaluate)
-
-                empty = True
-                for _ in mapped_path.iterdir():
-                    empty = False
-
-                if empty:
-                    shutil.rmtree(mapped_path)
+            if empty:
+                shutil.rmtree(mapped_path)
 
 
 def query_cluster_metadata(db_filter):
@@ -313,44 +361,46 @@ def sketch_genomes(db_filter, working_dir, verbose=False, threads=1,
 
 
 def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
-               S=1, M=0.5):
+               emax=0.9, S=1.6, M=2):
     if verbose:
-        print("...First clustering iteration...")
-    first_scheme = clustering.dbscan(matrix, eps, 1,
-                                     is_distance=is_distance,
-                                     return_matrix=True)
+        print("...Greedily defining clusters...")
+    greedy_scheme = clustering.dbscan(matrix, eps, 1,
+                                      is_distance=is_distance,
+                                      return_matrix=True)
 
     cluster_counter = 0
     second_scheme = dict()
     work_items = []
-    for greedy_cluster, submatrix in first_scheme.items():
+    for greedy_cluster, submatrix in greedy_scheme.items():
         if greedy_cluster is None or submatrix.size <= 1:
             noise = second_scheme.get(None, list())
             second_scheme[None] = noise + submatrix.labels
             continue
 
-        work_items.append((submatrix, is_distance, S, M))
+        work_items.append((submatrix, is_distance, eps, emax, S, M))
 
     if verbose:
-        print("...Second clustering iteration...")
-    second_schemes = parallelize.parallelize(
-                            work_items, cores, second_iter_cluster_process,
+        print("...Performing clustering iterations...")
+    layered_schemes = parallelize.parallelize(
+                            work_items, cores, iter_cluster_process,
                             verbose=verbose)
 
-    for scheme in second_schemes:
+    iter_scheme = dict()
+    work_items = []
+    for scheme in layered_schemes:
         for cluster, cluster_members in scheme.items():
             if cluster is None:
                 noise = second_scheme.get(None, list())
-                second_scheme[None] = noise + cluster_members
+                iter_scheme[None] = noise + cluster_members
                 continue
 
             cluster_counter += 1
-            second_scheme[cluster_counter] = cluster_members
+            iter_scheme[cluster_counter] = cluster_members
 
-    return second_scheme
+    return iter_scheme
 
 
-def second_iter_cluster_process(submatrix, is_distance, S, M):
+def iter_cluster_process(submatrix, is_distance, emin, emax, S, M):
     mean = submatrix.get_mean()
     std_dev = submatrix.get_SD()
 
@@ -358,23 +408,57 @@ def second_iter_cluster_process(submatrix, is_distance, S, M):
     std_mean = standard_submatrix.get_mean()
     std_median = standard_submatrix.get_median()
 
-    eps = mean + ((std_median - std_mean) * S * std_dev)
+    eps = mean + ((std_mean - std_median) * S * std_dev)
+    if eps < emin:
+        eps = emin
+    elif eps > emax:
+        eps = emax
 
     size = submatrix.size
-    minpts = int(round((math.log10(size) * M), 0))
+    minpts = int(round(((math.log2(size) - 1) * M), 0))
     if minpts < 1:
         minpts = 1
 
-    second_iter_scheme = clustering.dbscan(submatrix, eps,
-                                           minpts, is_distance=is_distance)
+    dbscan_scheme = clustering.dbscan(submatrix, eps,
+                                      minpts, is_distance=is_distance,
+                                      return_matrix=True)
 
-    return second_iter_scheme
+    dbscan_centroids = list()
+    noise = list()
+    for dbscan_cluster, dbscan_matrix in dbscan_scheme.items():
+        if dbscan_cluster is None:
+            noise += dbscan_matrix.labels
+            continue
+
+        dbscan_centroids.append(dbscan_matrix.get_centroid())
+
+    if not dbscan_centroids:
+        return {None: noise}
+
+    kmeans_scheme = clustering.lloyds(submatrix, dbscan_centroids,
+                                      is_distance=is_distance,
+                                      return_matrix=False)
+
+    iter_scheme = dict()
+    for kmeans_cluster, kmeans_members in kmeans_scheme.items():
+        if len(kmeans_members) <= 1:
+            noise += kmeans_members
+            continue
+
+        iter_scheme[kmeans_cluster] = kmeans_members
+
+    iter_scheme[None] = noise
+
+    return iter_scheme
 
 
 def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
                 cores=1, verbose=False, gcs=DEFAULT_SETTINGS["gcs"],
-                evaluate=False, cluster_prefix=None):
-    cluster_scheme = cluster_db(gcs_matrix, gcs, cores=cores, verbose=verbose,
+                gcsmax=DEFAULT_SETTINGS["gcsmax"], S=DEFAULT_SETTINGS["gcsS"],
+                M=DEFAULT_SETTINGS["gcsM"], evaluate=False,
+                cluster_prefix=None):
+    cluster_scheme = cluster_db(gcs_matrix, gcs, emax=gcsmax, S=S, M=M,
+                                cores=cores, verbose=verbose,
                                 is_distance=False)
 
     # TEST CODE
@@ -472,9 +556,9 @@ def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
 
 def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
                    cluster_lookup, cluster_seqid_map,
-                   subcluster_lookup,
-                   cores=1, verbose=False, ani=DEFAULT_SETTINGS["ani"],
-                   evaluate=False):
+                   subcluster_lookup, cores=1, verbose=False,
+                   ani=DEFAULT_SETTINGS["ani"],
+                   animax=DEFAULT_SETTINGS["animax"], evaluate=False):
 
     for cluster, cluster_members in cluster_scheme.items():
         if cluster is None:
@@ -515,8 +599,9 @@ def ani_subcluster(working_dir, sketch_path_map, cluster_scheme,
         ani_matrix = calculate_ani_matrix(cluster_members, sketch_path_map,
                                           cores=cores, verbose=verbose)
 
-        subcluster_scheme = cluster_db(ani_matrix, ani, cores=cores,
-                                       verbose=verbose, is_distance=False)
+        subcluster_scheme = cluster_db(ani_matrix, ani, emax=animax,
+                                       cores=cores, verbose=verbose,
+                                       is_distance=False)
 
         subcluster_redistributions = get_cluster_redistributions(
                                             subcluster_scheme,
@@ -806,7 +891,7 @@ def get_cluster_redistributions(cluster_scheme, cluster_lookup, old_clusters):
 # -----------------------------------------------------------------------------
 def write_clustering_evaluation(working_dir, scheme_metadata,
                                 old_scheme_metadata, alteration_metadata,
-                                metric):
+                                metric, max_qlines=5):
     full_data_lines = []
     quick_data_lines = []
 
@@ -848,21 +933,15 @@ def write_clustering_evaluation(working_dir, scheme_metadata,
             new_avg = new_scheme_data["average_value"]
 
             full_data_lines.append(f"Cluster {new_cluster} changes:")
+
             if old_scheme_data is None:
                 line = "\n".join(textwrap.wrap("".join([
                         f"> New cluster {new_cluster} has an average of ",
                         "{:.1f} % intercluster ".format(new_avg*100),
                         metric]), width=75))
                 full_data_lines.append(textwrap.indent(line, "\t"))
-                quick_data_lines.append(f"Created {new_cluster}")
             else:
                 old_avg_gcs = old_scheme_data["average_value"]
-
-                line = "\n".join(textwrap.wrap("".join([
-                            f"> Cluster {new_cluster} genomes had an average ",
-                            "of {:.1f}% intercluster ".format(old_avg_gcs*100),
-                            metric]), width=75))
-                full_data_lines.append(textwrap.indent(line, "\t"))
 
                 line = "\n".join(textwrap.wrap("".join([
                             f"> Reclustered {new_cluster} has an average of ",
@@ -870,43 +949,72 @@ def write_clustering_evaluation(working_dir, scheme_metadata,
                             metric]), width=75))
                 full_data_lines.append(textwrap.indent(line, "\t"))
 
+                line = "\n".join(textwrap.wrap("".join([
+                            f"> Cluster {new_cluster} genomes had an average ",
+                            "of {:.1f}% intercluster ".format(old_avg_gcs*100),
+                            metric]), width=75))
+                full_data_lines.append(textwrap.indent(line, "\t"))
+        else:
+            full_data_lines.append("Clustering noise:")
+
         for old_cluster, old_cluster_redist_data in alteration_data.items():
             percent = old_cluster_redist_data["percent_merged"] * 100
-            if percent < 30 or old_cluster is None:
-                if old_cluster is None:
-                    old_cluster = "Singleton"
+            old_members = old_cluster_redist_data["old_members"]
+            num_old_members = len(old_members)
+            full_quick_lines = num_old_members <= max_qlines
 
-                for member in old_cluster_redist_data["old_members"]:
-                    if new_cluster is not None:
+            if old_cluster is None:
+                old_cluster = "Singleton"
+                pass
+
+            if not full_quick_lines:
+                if new_cluster is None:
+                    quick_data_lines.append(
+                            f"Removed {round(percent, 1)}% of {old_cluster} ")
+                elif old_scheme_data is None:
+                    quick_data_lines.append(
+                                    f"Created {new_cluster} <- "
+                                    f"{old_cluster} ({round(percent, 1)}%)")
+                else:
+                    quick_data_lines.append(
+                                f"Merged {new_cluster} <- "
+                                f"{old_cluster} ({round(percent, 1)}%)")
+            elif new_cluster is None:
+                line = "\n".join(textwrap.wrap("".join([
+                        f"> {round(percent, 1)}% of {old_cluster} genomes ",
+                        "were labelled as noise"]), width=75))
+                full_data_lines.append(textwrap.indent(line, "\t"))
+            else:
+                line = "\n".join(textwrap.wrap("".join([
+                        f"> {round(percent, 1)}% of {old_cluster} genomes ",
+                        f"were merged into {new_cluster}"]), width=75))
+                full_data_lines.append(textwrap.indent(line, "\t"))
+
+            for member in old_cluster_redist_data["old_members"]:
+                if full_quick_lines:
+                    if new_cluster is None:
+                        quick_data_lines.append(
+                                        f"Removed {member} [{old_cluster}] ")
+                    elif old_scheme_data is None:
+                        quick_data_lines.append(
+                                    f"Created {new_cluster} <- "
+                                    f"{member} [{old_cluster}]")
+                    else:
                         quick_data_lines.append(f"Added {new_cluster} <- "
                                                 f"{member} [{old_cluster}]")
 
-                        line = "\n".join(textwrap.wrap((
-                            f"* {member} [{old_cluster}] "
-                            f"was added to cluster {new_cluster}"), width=71))
-                        full_data_lines.append(textwrap.indent(line, "\t\t"))
-                    else:
-                        quick_data_lines.append(
-                                        f"Labelled {member} [{old_cluster}] "
-                                        "as noise")
-                continue
-
-            if new_cluster is not None:
-                quick_data_lines.append(
-                                f"Merged {new_cluster} <- "
-                                f"{old_cluster} ({round(percent, 1)}%)")
-
-                line = "\n".join(textwrap.wrap(("".join([
-                                "* {:.1f}% of ".format(percent),
-                                f"cluster {old_cluster} ",
-                                f"was merged into cluster {new_cluster}"])),
+                if new_cluster is None:
+                    line = "\n".join(textwrap.wrap((
+                                f"* {member} [{old_cluster}] "
+                                f"was removed (noise)"),
                                 width=71))
-
-                full_data_lines.append(textwrap.indent(line, "\t\t"))
-            else:
-                quick_data_lines.append(
-                            f"Labelled {round(percent, 1)}% of {old_cluster} "
-                            "as noise")
+                    full_data_lines.append(textwrap.indent(line, "\t\t"))
+                else:
+                    line = "\n".join(textwrap.wrap((
+                                f"* {member} [{old_cluster}] "
+                                f"was added to cluster {new_cluster}"),
+                                width=71))
+                    full_data_lines.append(textwrap.indent(line, "\t\t"))
 
         full_data_lines.append("")
 
