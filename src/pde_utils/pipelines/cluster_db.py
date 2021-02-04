@@ -369,12 +369,12 @@ def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
                                       return_matrix=True)
 
     cluster_counter = 0
-    second_scheme = dict()
+    iter_scheme = dict()
     work_items = []
     for greedy_cluster, submatrix in greedy_scheme.items():
         if greedy_cluster is None or submatrix.size <= 1:
-            noise = second_scheme.get(None, list())
-            second_scheme[None] = noise + submatrix.labels
+            noise = iter_scheme.get(None, list())
+            iter_scheme[None] = noise + submatrix.labels
             continue
 
         work_items.append((submatrix, is_distance, eps, emax, S, M))
@@ -385,12 +385,11 @@ def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
                             work_items, cores, iter_cluster_process,
                             verbose=verbose)
 
-    iter_scheme = dict()
     work_items = []
     for scheme in layered_schemes:
         for cluster, cluster_members in scheme.items():
             if cluster is None:
-                noise = second_scheme.get(None, list())
+                noise = iter_scheme.get(None, list())
                 iter_scheme[None] = noise + cluster_members
                 continue
 
@@ -424,24 +423,23 @@ def iter_cluster_process(submatrix, is_distance, emin, emax, S, M):
                                       return_matrix=True)
 
     dbscan_centroids = list()
-    noise = list()
     for dbscan_cluster, dbscan_matrix in dbscan_scheme.items():
         if dbscan_cluster is None:
-            noise += dbscan_matrix.labels
             continue
 
         dbscan_centroids.append(dbscan_matrix.get_centroid())
 
     if not dbscan_centroids:
-        return {None: noise}
+        return {None: submatrix.labels}
 
-    kmeans_scheme = clustering.lloyds(submatrix, dbscan_centroids,
+    kmeans_scheme = clustering.lloyds(submatrix, dbscan_centroids, eps=emin,
                                       is_distance=is_distance,
                                       return_matrix=False)
 
     iter_scheme = dict()
+    noise = list()
     for kmeans_cluster, kmeans_members in kmeans_scheme.items():
-        if len(kmeans_members) <= 1:
+        if len(kmeans_members) <= 1 or kmeans_cluster is None:
             noise += kmeans_members
             continue
 
@@ -494,8 +492,8 @@ def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
     # =========================================================================
     # new_cluster_lookup = {}
     # for cluster, cluster_members in cluster_scheme.items():
-    #    for member in cluster_members:
-    #        new_cluster_lookup[member] = cluster
+    #     for member in cluster_members:
+    #         new_cluster_lookup[member] = cluster
 
     # stable_old_clusters = set(cluster_seqid_map.keys())
     # new_clusters = set(cluster_scheme.keys())
@@ -504,11 +502,11 @@ def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
     # for cluster in diff_clusters:
     #     print(f"Neglected cluster {cluster}")
 
-    #    new_cluster_set = set()
-    #    for cluster_member in cluster_seqid_map[cluster]:
-    #        new_cluster_set.add(new_cluster_lookup[cluster_member])
+    #     new_cluster_set = set()
+    #     for cluster_member in cluster_seqid_map[cluster]:
+    #         new_cluster_set.add(new_cluster_lookup[cluster_member])
 
-    #    print(f"\tEnded up in {new_cluster_set}")
+    #     print(f"\tEnded up in {new_cluster_set}")
 
     # shutil.rmtree(working_dir)
     # return

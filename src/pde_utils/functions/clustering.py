@@ -296,13 +296,13 @@ def dbscan(matrix, eps, minpts, is_distance=True, return_matrix=False):
     return cluster_scheme
 
 
-def lloyds(matrix, centroids, is_distance=True, return_matrix=False):
+def lloyds(matrix, centroids, eps=None, is_distance=True, return_matrix=False):
     cent_indicies = set()
     for centroid in centroids:
         cent_indicies.add(matrix.get_index_from_label(centroid))
 
-    clustering_scheme = dict()
     while True:
+        clustering_scheme = dict()
         cent_lookup = dict()
         for i, cent_index in enumerate(cent_indicies):
             clustering_scheme[(i+1)] = [matrix.get_label_from_index(
@@ -322,11 +322,20 @@ def lloyds(matrix, centroids, is_distance=True, return_matrix=False):
                                             key=lambda x: matrix.matrix[i][x])
 
             cluster = cent_lookup[closest_centroid]
+            if eps is not None:
+                if matrix.matrix[i][closest_centroid] < eps:
+                    noise = clustering_scheme.get(None, list())
+                    noise.append(matrix.get_label_from_index(i))
+                    clustering_scheme[None] = noise
+
             clustering_scheme[cluster].append(matrix.get_label_from_index(i))
 
         scheme_matricies = dict()
         new_cent_indicies = set()
         for cluster, cluster_members in clustering_scheme.items():
+            if cluster is None:
+                continue
+
             cluster_members.sort()
             submatrix = matrix.get_submatrix_from_labels(cluster_members)
             scheme_matricies[cluster] = submatrix
@@ -337,11 +346,6 @@ def lloyds(matrix, centroids, is_distance=True, return_matrix=False):
         diff_indicies = new_cent_indicies.difference(cent_indicies)
         if not diff_indicies:
             break
-        else:
-            if 91 in diff_indicies or 92 in diff_indicies:
-                print(scheme_matricies[2])
-                print(matrix.get_label_from_index(91))
-                print(matrix.get_label_from_index(92))
 
         cent_indicies = new_cent_indicies
 
