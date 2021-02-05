@@ -408,7 +408,6 @@ def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
         diff_unclustered = set(unclustered_matrix.labels).difference(
                                                     new_unclustered_members)
 
-        break
         if not diff_unclustered:
             break
 
