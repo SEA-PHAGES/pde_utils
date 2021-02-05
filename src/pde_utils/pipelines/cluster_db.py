@@ -11,7 +11,7 @@ from pdm_utils.functions import (configfile, multithread, parallelize,
                                  fileio as pdm_fileio, pipelines_basic)
 from pdm_utils.pipelines.revise import TICKET_HEADER
 
-from pde_utils.functions import (alignment, clustering, seq_distance,
+from pde_utils.functions import (alignment, clustering, distance,
                                  sql_queries)
 
 
@@ -323,7 +323,7 @@ def calculate_gcs_matrix(alchemist, phage_ids, cores=1, verbose=False):
         print("Calculating gene content similarity matrix...")
     gcs_matrix = clustering.build_symmetric_matrix(
                                 phage_gc_nodes,
-                                seq_distance.calculate_gcs, names=phage_ids,
+                                distance.calculate_gcs, names=phage_ids,
                                 cores=cores, verbose=verbose)
     return gcs_matrix
 
