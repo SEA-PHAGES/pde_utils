@@ -363,38 +363,57 @@ def sketch_genomes(db_filter, working_dir, verbose=False, threads=1,
 def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
                emax=0.9, S=1.6, M=2):
     if verbose:
-        print("...Greedily defining clusters...")
-    greedy_scheme = clustering.dbscan(matrix, eps, 1,
-                                      is_distance=is_distance,
-                                      return_matrix=True)
+        print("...Performing clustering iterations...")
 
+    iteration_counter = 1
     cluster_counter = 0
     iter_scheme = dict()
-    work_items = []
-    for greedy_cluster, submatrix in greedy_scheme.items():
-        if greedy_cluster is None or submatrix.size <= 1:
-            noise = iter_scheme.get(None, list())
-            iter_scheme[None] = noise + submatrix.labels
-            continue
+    unclustered_matrix = matrix
+    while True:
+        iter_scheme[None] = list()
 
-        work_items.append((submatrix, is_distance, eps, emax, S, M))
+        if verbose:
+            print(f"...Starting clustering iteration {iteration_counter}")
 
-    if verbose:
-        print("...Performing clustering iterations...")
-    layered_schemes = parallelize.parallelize(
-                            work_items, cores, iter_cluster_process,
-                            verbose=verbose)
+        iteration_counter += 1
 
-    work_items = []
-    for scheme in layered_schemes:
-        for cluster, cluster_members in scheme.items():
-            if cluster is None:
-                noise = iter_scheme.get(None, list())
-                iter_scheme[None] = noise + cluster_members
+        greedy_scheme = clustering.dbscan(unclustered_matrix, eps, 1,
+                                          is_distance=is_distance,
+                                          return_matrix=True)
+
+        work_items = []
+        for greedy_cluster, submatrix in greedy_scheme.items():
+            if greedy_cluster is None or submatrix.size <= 1:
+                iter_scheme[None] = iter_scheme[None] + submatrix.labels
                 continue
 
-            cluster_counter += 1
-            iter_scheme[cluster_counter] = cluster_members
+            work_items.append((submatrix, is_distance, eps, emax, S, M))
+
+        layered_schemes = parallelize.parallelize(
+                                work_items, cores, iter_cluster_process,
+                                verbose=False)
+
+        work_items = []
+        for scheme in layered_schemes:
+            for cluster, cluster_members in scheme.items():
+                if cluster is None:
+                    iter_scheme[None] = iter_scheme[None] + cluster_members
+                    continue
+
+                cluster_counter += 1
+                iter_scheme[cluster_counter] = cluster_members
+
+        new_unclustered_members = set(iter_scheme[None])
+
+        diff_unclustered = set(unclustered_matrix.labels).difference(
+                                                    new_unclustered_members)
+
+        break
+        if not diff_unclustered:
+            break
+
+        unclustered_matrix = matrix.get_submatrix_from_labels(
+                                                list(new_unclustered_members))
 
     return iter_scheme
 
@@ -422,6 +441,20 @@ def iter_cluster_process(submatrix, is_distance, emin, emax, S, M):
                                       minpts, is_distance=is_distance,
                                       return_matrix=True)
 
+    # TEST CODE
+    # member_set = set()
+    # for cluster, members in dbscan_scheme.items():
+    #     for member in members:
+    #         if member in member_set:
+    #             member_set.add(member)
+    #             print(f"{member} already exists in set")
+    #             raise
+
+    #         member_set.add(member)
+
+    # return dbscan_scheme
+    # TEST CODE
+
     dbscan_centroids = list()
     for dbscan_cluster, dbscan_matrix in dbscan_scheme.items():
         if dbscan_cluster is None:
@@ -447,6 +480,18 @@ def iter_cluster_process(submatrix, is_distance, emin, emax, S, M):
 
     iter_scheme[None] = noise
 
+    # TEST CODE
+    # member_set = set()
+    # for cluster, members in iter_scheme.items():
+    #     for member in members:
+    #         if member in member_set:
+    #             member_set.add(member)
+    #             print(f"{member} already exists in set")
+    #             raise
+
+    #         member_set.add(member)
+    # TEST CODE
+
     return iter_scheme
 
 
@@ -462,18 +507,29 @@ def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
     # TEST CODE
     # =========================================================================
     # new_cluster_lookup = {}
+    # member_set = set()
     # for cluster, cluster_members in cluster_scheme.items():
-    #    for member in cluster_members:
-    #        new_cluster_lookup[member] = cluster
+    #     for member in cluster_members:
+    #         new_cluster_lookup[member] = cluster
+
+    #         if member in member_set:
+    #             member_set.add(member)
+    #             print(f"{member} is duplicated in {cluster} and "
+    #                   f"{new_cluster_lookup[member]}")
+    #             print(sorted(list(member_set)))
+
+    #             raise
+
+    #         member_set.add(member)
 
     # for cluster in cluster_seqid_map.keys():
-    #    print(f"Old cluster {cluster}")
+    #     print(f"Old cluster {cluster}")
 
-    #    new_cluster_set = set()
-    #    for cluster_member in cluster_seqid_map[cluster]:
-    #        new_cluster_set.add(new_cluster_lookup[cluster_member])
+    #     new_cluster_set = set()
+    #     for cluster_member in cluster_seqid_map[cluster]:
+    #         new_cluster_set.add(new_cluster_lookup[cluster_member])
 
-    #    print(f"\tEnded up in {new_cluster_set}")
+    #     print(f"\tEnded up in {new_cluster_set}")
 
     # shutil.rmtree(working_dir)
     # return
@@ -491,9 +547,20 @@ def gcs_cluster(working_dir, gcs_matrix, cluster_lookup, cluster_seqid_map,
     # TEST CODE
     # =========================================================================
     # new_cluster_lookup = {}
+    # member_set = set()
     # for cluster, cluster_members in cluster_scheme.items():
     #     for member in cluster_members:
     #         new_cluster_lookup[member] = cluster
+
+    #         if member in member_set:
+    #             member_set.add(member)
+    #             print(f"{member} is duplicated in {cluster} and "
+    #                   f"{new_cluster_lookup[member]}")
+    #             print(sorted(list(member_set)))
+
+    #             raise
+
+    #         member_set.add(member)
 
     # stable_old_clusters = set(cluster_seqid_map.keys())
     # new_clusters = set(cluster_scheme.keys())

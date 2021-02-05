@@ -327,6 +327,7 @@ def lloyds(matrix, centroids, eps=None, is_distance=True, return_matrix=False):
                     noise = clustering_scheme.get(None, list())
                     noise.append(matrix.get_label_from_index(i))
                     clustering_scheme[None] = noise
+                    continue
 
             clustering_scheme[cluster].append(matrix.get_label_from_index(i))
 
