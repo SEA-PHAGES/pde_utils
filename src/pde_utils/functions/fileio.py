@@ -190,10 +190,10 @@ def write_primer_txt_file(primer_pair, file_path):
         filehandle.write("\n\n")
 
 
-def name_comment_files(path_map, threads=1, verbose=False):
+def name_comment_files(path_name_map, threads=1, verbose=False):
     work_items = []
-    for pham, path in path_map.items():
-        work_items.append((pham, path))
+    for path, name in path_name_map.items():
+        work_items.append((name, path))
 
     multithread.multithread(work_items, threads, name_comment_file,
                             verbose=verbose)

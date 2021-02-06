@@ -5,10 +5,8 @@ from subprocess import Popen, PIPE
 from Bio import AlignIO
 from Bio.Emboss import Applications
 import Levenshtein
-from pdm_utils.functions import fileio as pdm_fileio
-from pdm_utils.functions import multithread
-from pdm_utils.functions import mysqldb_basic
-from pdm_utils.functions import parallelize
+from pdm_utils.functions import (annotation, basic, multithread, mysqldb_basic,
+                                 parallelize, fileio as pdm_fileio, querying)
 
 
 # GLOBAL VARIABLES
@@ -391,8 +389,66 @@ def hmmbuild(infile_path, hmm_path, seq_type="dna", verbose=0):
 
     return hmm_path
 
-# FILE I/O TOOLS
+
+# PHAM ALIGNMENT TOOLS
 # ----------------------------------------------------------------------
+def get_pham_gene_translations(alchemist, phams):
+    """Creates a 2D dictionary that maps phams to dictionaries that map
+    unique translations to respective geneids for the specified phams.
+
+    :param alchemist:  A connected and fully build AlchemyHandler object
+    :type alchemist: AlchemyHandler
+    :return: Returns a dictionary mapping phams to translations to geneids
+    :rtype: dict{dict}
+    """
+    gene_obj = alchemist.metadata.tables["gene"]
+
+    name_obj = gene_obj.c.Name
+    phageid_obj = gene_obj.c.PhageID
+    phamid_obj = gene_obj.c.PhamID
+    translation_obj = gene_obj.c.Translation
+
+    query = querying.build_select(alchemist.graph, [
+                        phamid_obj, phageid_obj, name_obj, translation_obj])
+
+    results = querying.execute(alchemist.engine, query, in_column=phamid_obj,
+                               values=phams)
+
+    pham_ts_to_id = dict()
+    for result in results:
+        translation = result["Translation"].decode("utf-8")
+
+        pham_ts = pham_ts_to_id.get(result["PhamID"], dict())
+        ts_ids = pham_ts.get(translation, list())
+
+        ts_id = " ".join([result["PhageID"], f"gp{result['Name']}"])
+        ts_ids.append(ts_id)
+        pham_ts[translation] = ts_ids
+
+        pham_ts_to_id[result["PhamID"]] = pham_ts
+
+    return pham_ts_to_id
+
+
+def get_pham_gene_annotations(alchemist, phams):
+    """Creates a 2D dictionary that maps phams to their most abundant
+    product label
+
+    :param alchemist: A connected and fully built AlchemyHandler object
+    :type alchemist: AlchemyHandler
+    :return: Returns a dictionary mapping phams to annotations
+    :rtype: dict{}
+    """
+    pham_annotations = dict()
+    for pham in phams:
+        count_annotations = annotation.get_count_annotations_in_pham(
+                                                        alchemist, pham)
+
+        sorted_annotations = basic.sort_histogram_keys(count_annotations)
+
+        pham_annotations[pham] = sorted_annotations[0]
+
+    return pham_annotations
 
 
 def get_pham_genes(engine, phamid):
@@ -448,6 +504,48 @@ def create_pham_fastas(engine, phams, aln_dir, data_cache=None, threads=1,
     return fasta_path_map
 
 
+def create_pham_alns(alchemist, working_dir, pham_ts_to_id, cores=1,
+                     mat_out=False, tree_out=False,
+                     infile_type="fasta", outfile_type="fasta",
+                     verbose=False):
+    work_items = []
+    for pham, pham_ts in pham_ts_to_id.items():
+        work_items.append((working_dir, pham, pham_ts, mat_out, tree_out,
+                           infile_type, outfile_type))
+
+    fasta_paths = parallelize.parallelize(
+                                work_items, cores,
+                                create_pham_alns_process, verbose=verbose)
+
+    return {pham: path for pham, path in fasta_paths}
+
+
+def create_pham_alns_process(working_dir, pham, ts_to_gs,
+                             mat_out, tree_out, infile_type, outfile_type):
+    aln_path = working_dir.joinpath(".".join([str(pham), "aln"]))
+
+    mat_path = None
+    if mat_out:
+        mat_path = working_dir.joinpath(".".join([str(pham), "mat"]))
+
+    tree_path = None
+    if tree_out:
+        tree_path = working_dir.joinpath(".".join([str(pham), "tree"]))
+
+    gs_to_ts = dict()
+    for ts, ids in ts_to_gs.items():
+        gs_to_ts[ids[0]] = ts
+
+    pdm_fileio.write_fasta(gs_to_ts, aln_path)
+
+    clustalo(aln_path, aln_path, mat_path, tree_path,
+             infile_type, outfile_type)
+
+    pdm_fileio.reintroduce_fasta_duplicates(ts_to_gs, aln_path)
+
+    return (pham, aln_path)
+
+
 def align_fastas(fasta_path_map, mat_out=False, tree_out=False,
                  file_type="fasta", mode="clustalo", override=False,
                  outdir=None, threads=1, verbose=False):
@@ -493,6 +591,43 @@ def align_fastas(fasta_path_map, mat_out=False, tree_out=False,
     parallelize.parallelize(work_items, threads, aln_driver, verbose=verbose)
 
     return aln_path_map
+
+
+def create_pham_hmms(alchemist, working_dir, pham_ts_to_id, cores=1,
+                     name_map=None, M=50, seq_id=90,
+                     add_cons=False, seq_lim=None, verbose=False):
+    if name_map is None:
+        name_map = dict()
+
+    work_items = []
+    for pham, pham_ts in pham_ts_to_id.items():
+        name = name_map.get(pham)
+        work_items.append((working_dir, pham, pham_ts, name, M, seq_id,
+                           add_cons, seq_lim))
+
+    hmm_paths = parallelize.parallelize(
+                                work_items, cores,
+                                create_pham_hmms_process, verbose=verbose)
+
+    return {pham: path for pham, path in hmm_paths}
+
+
+def create_pham_hmms_process(working_dir, pham, ts_to_gs, name,
+                             M, seq_id, add_cons, seq_lim):
+    aln_path = working_dir.joinpath(".".join([str(pham), "aln"]))
+    hmm_path = working_dir.joinpath(".".join([str(pham), "hhm"]))
+
+    gs_to_ts = dict()
+    for ts, ids in ts_to_gs.items():
+        gs_to_ts[ts] = ids[0]
+
+    pdm_fileio.write_fasta(gs_to_ts, aln_path)
+
+    clustalo(aln_path, aln_path, None, None, "fasta", "fasta")
+
+    hhmake(aln_path, hmm_path, name, add_cons, seq_lim, M, seq_id)
+
+    return (pham, hmm_path)
 
 
 def create_hmms(aln_path_map, name=False, outdir=None, M=50, seq_id=90,

@@ -38,7 +38,7 @@ def main(unparsed_args_list):
     execute_make_db(alchemist, args.db_type, folder_path=args.folder_path,
                     folder_name=args.folder_name, values=values,
                     verbose=args.verbose, filters=args.filters,
-                    groups=args.groups, db_name=args.db_name,
+                    groups=args.groups, db_name=args.database_name,
                     threads=args.threads, use_mpi=args.use_mpi)
 
 
@@ -142,7 +142,7 @@ def parse_make_db(unparsed_args_list):
         subparser.set_defaults(folder_name=DEFAULT_FOLDER_NAME,
                                folder_path=None, verbose=False, input=[],
                                filters="", groups=[],
-                               db_name=None, threads=1, use_mpi=False)
+                               database_name=None, threads=1, use_mpi=False)
 
     parsed_args = parser.parse_args(unparsed_args_list[2:])
     return parsed_args
@@ -256,24 +256,30 @@ def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
         data_cache = {}
 
     if verbose:
-        print("Writing pham amino acid sequences to file...")
-    fasta_path_map = alignment.create_pham_fastas(
-                                        alchemist.engine, values, aln_dir,
-                                        data_cache=data_cache, threads=threads,
-                                        verbose=verbose)
+        print("Retrieving pham gene translations...")
+    pham_ts_to_id = alignment.get_pham_gene_translations(alchemist, values)
 
     if verbose:
-        print("Aligning pham amino acid sequences...")
-    aln_path_map = alignment.align_fastas(
-                                        fasta_path_map, override=True,
-                                        threads=threads, verbose=verbose)
+        print("Writing/aligning pham amino acid sequences to file...")
 
-    name_path_map = {}
+    aln_path_map = alignment.create_pham_alns(
+                               alchemist, aln_dir, pham_ts_to_id,
+                               cores=threads, verbose=verbose)
+
+    pham_annotation_map = alignment.get_pham_gene_annotations(
+                                                         alchemist, values)
+
+    path_name_map = {}
     for pham, path in aln_path_map.items():
-        name_path_map[f"pham{pham}"] = path
+        annotation = pham_annotation_map.get(pham, "")
+        if annotation == "":
+            annotation = "hypothetical protein"
+
+        path_name_map[path] = f"{annotation} [pham {pham}]"
+
     if verbose:
         print("Adding names to pham alignments...")
-    pde_fileio.name_comment_files(name_path_map, threads=threads,
+    pde_fileio.name_comment_files(path_name_map, threads=threads,
                                   verbose=verbose)
 
     return aln_path_map
