@@ -1,0 +1,69 @@
+Query         DRAFT Phoebe_CDS_8 lysin A [Mycobacterium phage Phoebe]
+Match_columns 514
+No_of_seqs    1 out of 1
+Neff          1
+Searched_HMMs 657
+Date          Sat Feb  6 10:34:49 2021
+Command       hhsearch -i /home/owen/git_repos/pde_utils/src/Phoebe_genes/Phoebe_CDS_8.fasta -d /home/owen/git_repos/pde_utils/src/Actino_Draft_Essentials/Actino_Draft_Essentials -o /home/owen/git_repos/pde_utils/src/Phoebe_HHsearch_results/Phoebe_CDS_8.hhr -M 50 -e 1 -qid 0 -cov 0 -v 0 
+
+ No Hit                             Prob E-value P-value  Score    SS Cols Query HMM  Template HMM
+  1 lysin A [pham 50186]           100.0  3E-207  4E-210 1519.1   0.0  503    1-514     1-522 (577)
+
+No 1
+>lysin A [pham 50186]
+Probab=100.00  E-value=2.8e-207  Score=1519.07  Aligned_cols=503  Identities=75%  Similarity=1.195  Sum_probs=493.5  Template_Neff=3.093
+
+Q DRAFT             1 MTEKVLPYDRAIVPQETGWWCGPAATQVVLNSRGIIVPEATLAAEIEAIENPGRGDDRDGTDYVGLIEQVLDRRVPAARY   80 (514)
+Q Consensus         1 mtekvlpydraivpqetgwwcgpaatqvvlnsrgiivpeatlaaeieaienpgrgddrdgtdyvglieqvldrrvpaary   80 (514)
+                      ||||||||||+||||||||||||||||||||||||||||+||+.||        |++++|||||||||+|||||||.|||
+T Consensus         1 MtEKVLPYDRsIVPQETGywCGPAATQVVLNSRGiiv~EatLarEI--------Gtt~rGTDYVGLIERvLD~rvPdArY   72 (577)
+T lysin_consensu    1 MTEKVLPYDRSIVPQETGYWCGPAATQVVLNSRGIIVPEATLAREI--------GTTRRGTDYVGLIERVLDRRVPDARY   72 (577)
+Confidence            9999999999999999999999999999999999999999999999        99999999999999999999999999
+
+
+Q DRAFT            81 TSVYLTNDPPTQAQKDRLWEHIVRSINAGYGVVMNWVAPPSNKPRGVKGSVSPRYSGGTTYHYVACMGYDDTPGARAVWI  160 (514)
+Q Consensus        81 tsvyltndpptqaqkdrlwehivrsinagygvvmnwvappsnkprgvkgsvsprysggttyhyvacmgyddtpgaravwi  160 (514)
+                      ||||+.|||||++||++||+|||||||||||||||||||||||||||||||||||||||||||||||||||+||+|||||
+T Consensus        73 TSVYiEnDPPTaaQke~LWrnlvrSIdAGyGVVMNWVAPPSNKPRGVKGSvsPrYSGGTTYHYVAaMGYDD~p~aRAVWI  152 (577)
+T lysin_consensu   73 TSVYIENDPPTAAQKETLWRNIVRSINAGYGVVMNWVAPPSNKPRGVKGSVSPRYSGGTTYHYVAAMGYDDNPGARAVWI  152 (577)
+Confidence            99999999999999999999999999999999999999999999999999999999999999999999999999999999
+
+
+Q DRAFT           161 ADSGFQPQGYWISFDQCATLIPPKGYAYADAAPAAPAPAPTPVVDAAPILARAAGISEA--KAREILPTMRDGLKQADCT  238 (514)
+Q Consensus       161 adsgfqpqgywisfdqcatlippkgyayadaapaapapaptpvvdaapilaraagisea--kareilptmrdglkqadct  238 (514)
+                      ||||||||||||||||||||||||||+|||..|++|+++|.+ .|++++|+|+.|+|..  ++++|||+++++|+.++||
+T Consensus       153 ADSGFqPqgYWISFDQcAtLIPPKGYayAd~~~~~p~~~p~~-~da~~~L~ramg~s~~~~ry~~lLP~~~~~l~~~~ct  231 (577)
+T lysin_consensu  153 ADSGFQPQGYWISFDQCATLIPPKGYAYADAAPAAPAPAPAA-PDAADILARAMGISEPFDRYRAILPAFRQGLREAECT  231 (577)
+Confidence            999999999999999999999999999999999998888873 3999999999999998  9999999999999999999
+
+
+Q DRAFT           239 TVNRIAMFIAQTGHESDDFRATEEYANGPL-----------DQERWIYKGRTWIQITWREHYARFGKWCFDRGLVTDPDV  307 (514)
+Q Consensus       239 tvnriamfiaqtghesddfrateeyangpl-----------dqerwiykgrtwiqitwrehyarfgkwcfdrglvtdpdv  307 (514)
+                      ||+||||++||.||||..|++++||.++..           ..++|.||||+|||||||.+|.+|++|||++|||.+|+.
+T Consensus       232 ~~~RiAm~~AQvGHES~gl~y~~E~~~~~a~~~r~dlgnt~pgDg~ryrGrgpIQvTgr~Ny~~~S~Wa~~kglVptPty  311 (577)
+T lysin_consensu  232 TVPRIAMWIAQVGHESVGLKYMEEYWGGTAAQYRTDLGNTQPGDGWRYRGRGPIQITGRHNYTRFSQWAFDRGLVPTPTY  311 (577)
+Confidence            999999999999999999999999999874           456799999999999999999999999999999999999
+
+
+Q DRAFT           308 FVKNPRALADLKWAGIGAAWYWTVERPDINALCDRRDIETVSRRINGTNPNTGRANHIEERIARWNRALAVGDDLLQLIR  387 (514)
+Q Consensus       308 fvknpraladlkwagigaawywtverpdinalcdrrdietvsrringtnpntgranhieeriarwnralavgddllqlir  387 (514)
+                      ||.||+.|++.+|++||++||||++||.||.+||+||++.+||.|||..  .|++|.|+.|++||||+||+|++||.++.
+T Consensus       312 FVdnP~~l~~~r~gf~g~~WYWt~~rP~~N~~aD~rDl~~~tr~ing~~--~~~~ngi~dR~~RynralAmg~~LL~~l~  389 (577)
+T lysin_consensu  312 FVDNPDELADDRWGFIGAAWYWTVQRPMINDLADARDLVRVTRYINGGT--NGRQNGIDDRRARYNRALAMGDDLLKLLN  389 (577)
+Confidence            9999999999999999999999999999999999999999999999987  89999999999999999999999999999
+
+
+Q DRAFT           388 EEEDGFLSALTPAEQRALYNEI----MKKGPTRSFM-AEDQNQIETLLGFVYNIDGNIWNDAV-TRAYLFDVPLAVEYVE  461 (514)
+Q Consensus       388 eeedgflsaltpaeqralynei----mkkgptrsfm-aedqnqietllgfvynidgniwndav-traylfdvplaveyve  461 (514)
+                      +++|+|+|+|||+|||+||.++    ||++|+|||+ ++++++|||++||+||+|||.|+..| +++++|++|.++++|+
+T Consensus       390 g~~d~~~sal~~~eqrell~~~~~~~~kr~psrS~~r~~~e~~i~T~~g~~~n~D~n~h~~~~~~~a~~~g~p~ai~~l~  469 (577)
+T lysin_consensu  390 GEEDDFLSALTPAEQRELLDELRWLLMKKFPSRSFLRAEDEGQIETLAGFIYNIDANIHNDAVVTLAYLFGDPDAVELVR  469 (577)
+Confidence            9999999999999999999998    9999999999 99999999999999999999999997 9999999999999999
+
+
+Q DRAFT           462 RVARDGVHPKSWAFQQLDGKGERWLAKFGQEYCKGLIRFKKKLNDLLEPYGEN  514 (514)
+Q Consensus       462 rvardgvhpkswafqqldgkgerwlakfgqeyckglirfkkklndllepygen  514 (514)
+                      +||++++|+|+|.+|+.+...++||++|++++||++++|++||.++||+++++
+T Consensus       470 ~vA~~~~~~~~~~~q~~~~la~~~la~~~~~~~~~~~~~~~~~~~~~~~~~~~  522 (577)
+T lysin_consensu  470 RVARTGVHPKSPARQQDAGLAERILAKFGQEYCKGLIRFKKKLNDLLEAYGPN  522 (577)
+Confidence            99999999999999999999999999999999999999999999999999874

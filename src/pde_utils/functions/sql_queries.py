@@ -29,3 +29,20 @@ def get_phams_and_lengths_from_organism(alchemist, organism_id):
                                          return_dict=False)
 
     return phams_and_lengths
+
+
+def get_phams_and_coords_from_organism(alchemist, organism_id):
+    gene_obj = alchemist.metadata.tables["gene"]
+
+    phageid_obj = gene_obj.c.PhageID
+    phamid_obj = gene_obj.c.PhamID
+    start_obj = gene_obj.c.Start
+    stop_obj = gene_obj.c.Stop
+
+    phams_query = select([phamid_obj, start_obj, stop_obj]).where(
+                                        phageid_obj == organism_id)
+
+    phams_and_coords = querying.execute(alchemist.engine, phams_query,
+                                        return_dict=False)
+
+    return phams_and_coords

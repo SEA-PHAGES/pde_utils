@@ -78,8 +78,26 @@ def calculate_gcs(query_phams, target_phams):
     return (query_spp + target_spp) / 2
 
 
-def calculate_norm_gcs(query_phams, target_phams):
-    pass
+def calculate_norm_gcs(query_data, target_data):
+    query_phams_to_length = query_data[0]
+    target_phams_to_length = target_data[0]
+
+    query_bases = 0
+    target_bases = 0
+    for pham in query_phams_to_length.keys():
+        query_length = query_phams_to_length.get(pham)
+        target_length = target_phams_to_length.get(pham)
+
+        if target_length is None:
+            continue
+
+        query_bases += query_length
+        target_bases += target_length
+
+    norm_gcs = ((query_bases + target_bases) /
+                (query_data[1] + target_data[1]))
+
+    return norm_gcs
 
 
 def mBed(fasta_file, distmat_out):

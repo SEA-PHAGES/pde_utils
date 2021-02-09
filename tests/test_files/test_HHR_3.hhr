@@ -1,0 +1,471 @@
+Query         DRAFT Phoebe_CDS_39 hypothetical protein [Mycobacterium phage Phoebe]
+Match_columns 41
+No_of_seqs    1 out of 3
+Neff          1
+Searched_HMMs 98086
+Date          Sun Feb  7 19:57:24 2021
+Command       hhsearch -cpu 8 -i ../results/full.a3m -d /cluster/toolkit/production/databases/hh-suite/mmcif70/pdb70 -d /cluster/toolkit/production/databases/hh-suite/pfama/pfama -d /cluster/toolkit/production/databases/hh-suite/NCBI_CD/NCBI_CD -d /cluster/toolkit/production/databases/hh-suite/SMART/SMART -o ../results/1373016.hhr -oa3m ../results/1373016.a3m -p 20 -Z 250 -loc -z 1 -b 1 -B 250 -ssm 2 -sc 1 -seq 1 -dbstrlen 10000 -norealign -maxres 32000 -contxt /cluster/toolkit/production/bioprogs/tools/hh-suite-build-new/data/context_data.crf 
+
+ No Hit                             Prob E-value P-value  Score    SS Cols Query HMM  Template HMM
+  1 1IGQ_D Transcriptional repress  91.6    0.97 9.9E-06   24.4   3.6   25   13-37     20-44  (62)
+  2 PF06613.12 ; KorB_C ; KorB C-t  74.2      13 0.00014   19.4   2.9   22   16-37     20-41  (59)
+  3 PF14192.7 ; DUF4314 ; Domain o  54.8      28 0.00028   19.6   2.0   18   24-41     41-58  (68)
+  4 PF06236.12 ; MelC1 ; Tyrosinas  49.8      40 0.00041   21.8   2.3   32    7-38     36-67  (109)
+  5 cd09621 CBM9_like_5; DOMON-lik  48.1      36 0.00037   17.9   1.7   20   19-38     22-41  (188)
+  6 PF07494.12 ; Reg_prop ; Two co  41.0      37 0.00038   11.3   1.2    9   23-31     12-20  (24)
+  7 PF09871.10 ; DUF2098 ; Unchara  40.3 1.2E+02  0.0012   18.4   3.2   33    3-38      6-38  (90)
+  8 cd00241 DOMON_like; Domon-like  38.3      81 0.00082   15.4   1.9   19   20-38     13-31  (158)
+  9 PF07088.12 ; GvpD ; GvpD gas v  34.9 1.2E+02  0.0012   21.0   2.9   38    2-40    469-506 (514)
+ 10 PF16011.6 ; CBM9_2 ; Carbohydr  33.5      83 0.00085   17.3   1.7   19   20-38     22-40  (192)
+ 11 4I0P_G HLA class II histocompa  32.6 1.4E+02  0.0014   15.6   2.7   34    8-41      1-34  (181)
+ 12 PF18106.2 ; Rol_Rep_N ; Rollin  28.8 1.5E+02  0.0015   16.3   2.2   34    4-37     38-71  (92)
+ 13 PF14231.7 ; GXWXG ; GXWXG prot  27.7      29  0.0003   19.5  -0.7   27    9-36     16-42  (60)
+ 14 2XET_A F1 CAPSULE-ANCHORING PR  27.6 1.6E+02  0.0016   14.6   2.7   20   14-35     38-57  (89)
+ 15 PF13496.7 ; DUF4120 ; Domain o  27.5 1.5E+02  0.0016   19.0   2.4   28    2-29     56-83  (95)
+ 16 4JPQ_A Uncharacterized protein  26.8 1.3E+02  0.0014   16.2   1.8   19   20-38     44-62  (220)
+ 17 PF13953.7 ; PapC_C ; PapC C-te  25.3 1.7E+02  0.0018   14.2   2.7   21   14-36     36-56  (67)
+ 18 cd09619 CBM9_like_4; DOMON-lik  24.9 1.6E+02  0.0017   15.0   1.8   19   20-38     31-49  (187)
+ 19 1NNX_A Protein ygiW; ygiW, Str  24.8 1.2E+02  0.0012   17.4   1.4   15   24-38     59-73  (109)
+ 20 6U5J_E Collar PA0615; bacterio  24.6 2.1E+02  0.0021   16.8   2.4   21   15-35     28-48  (171)
+ 21 PF19083.1 ; DUF5774 ; Family o  24.4 1.3E+02  0.0013   20.2   1.7   23   19-41     33-55  (136)
+ 22 6U5J_A Collar PA0615; bacterio  23.2 2.4E+02  0.0024   16.6   2.5   21   15-35     28-48  (171)
+ 23 3L48_A Outer membrane usher pr  22.6 2.6E+02  0.0027   15.3   3.1   24   12-37     41-64  (94)
+ 24 3L48_E Outer membrane usher pr  22.6 2.6E+02  0.0027   15.3   3.1   24   12-37     41-64  (94)
+ 25 PF08869.12 ; XisI ; XisI prote  22.3 1.2E+02  0.0012   18.3   1.2   11   25-35     64-74  (110)
+ 26 4OR1_A Invasin homolog AafB, M  21.9 2.4E+02  0.0025   18.4   2.5   28   13-40     60-87  (155)
+ 27 1DSV_A NUCLEIC ACID BINDING PR  21.9      67 0.00069   14.9   0.1    6    8-13     10-15  (31)
+ 28 cd09620 CBM9_like_3; DOMON-lik  21.9 2.1E+02  0.0022   15.3   2.0   19   20-38     25-43  (200)
+ 29 2MJC_A Eukaryotic translation   21.4      69  0.0007   15.7   0.1   14    1-15     10-23  (34)
+ 30 cd19264 AdoMet_MTase_I; class   21.1 1.4E+02  0.0014   17.1   1.3   16    4-19    238-253 (255)
+ 31 1WPI_A Hypothetical 15.6 kDa p  21.0 1.5E+02  0.0015   17.2   1.4   13   24-36    104-116 (133)
+ 32 cd03899 bacterial_lipase; x. a  20.4      71 0.00073   19.1  -0.0   37    5-41    192-230 (276)
+
+No 1
+>1IGQ_D Transcriptional repressor protein KorB; SH3 domain, dimerization domain, TRANSCRIPTION; 1.7A {Escherichia coli} SCOP: b.34.1.3
+Probab=91.63  E-value=0.97  Score=24.40  Aligned_cols=25  Identities=20%  Similarity=0.654  Sum_probs=0.0  Template_Neff=7.000
+
+Q ss_pred             eeeEEEeCCccCCCccEEEEeCCCc
+Q DRAFT            13 TGSVFLYGGRPDRSGAIWVRWDGKG   37 (41)
+Q Consensus        13 tgsvflyggrpdrsgaiwvrwdgkg   37 (41)
+                      .....+...+|+.+|.+||++|+.|
+T Consensus        20 r~~~lll~r~p~~~g~v~V~~~d~g   44 (62)
+T 1IGQ_D           20 RPARLILNRRPPAEGYAWLKYEDDG   44 (62)
+T ss_dssp             EEEEECTTSCCSSTTEEEEEETTTC
+T ss_pred             EEEEEEEccCCCCCCEEEEEECCCC
+
+
+No 2
+>PF06613.12 ; KorB_C ; KorB C-terminal beta-barrel domain
+Probab=74.17  E-value=13  Score=19.40  Aligned_cols=22  Identities=27%  Similarity=0.783  Sum_probs=0.0  Template_Neff=7.600
+
+Q ss_pred             EEEeCCccCCCccEEEEeCCCc
+Q DRAFT            16 VFLYGGRPDRSGAIWVRWDGKG   37 (41)
+Q Consensus        16 vflyggrpdrsgaiwvrwdgkg   37 (41)
+                      ..+..-+|+..|.+||+++..|
+T Consensus        20 ~lll~r~p~~~g~~~v~~~~~g   41 (59)
+T C7RVT8_ACCPU/2   20 RLILNRRPPVEGHAWLKYDDDG   41 (59)
+T ss_pred             EEEEeeCCCCCCEEEEEECCCC
+
+
+No 3
+>PF14192.7 ; DUF4314 ; Domain of unknown function (DUF4314)
+Probab=54.79  E-value=28  Score=19.61  Aligned_cols=18  Identities=39%  Similarity=0.715  Sum_probs=0.0  Template_Neff=6.400
+
+Q ss_pred             CCCccEEEEeCCCcceeC
+Q DRAFT            24 DRSGAIWVRWDGKGLVPL   41 (41)
+Q Consensus        24 drsgaiwvrwdgkglvpl   41 (41)
+                      |..|.|+|+||.-....|
+T Consensus        41 Dd~g~i~V~WdnG~~l~l   58 (68)
+T D3DZX5_METRM/2   41 DDIGQIHVRWENGSGLAL   58 (68)
+T ss_pred             CCCCEEEEEecCCCeEEE
+
+
+No 4
+>PF06236.12 ; MelC1 ; Tyrosinase co-factor MelC1
+Probab=49.82  E-value=40  Score=21.80  Aligned_cols=32  Identities=41%  Similarity=0.526  Sum_probs=0.0  Template_Neff=4.500
+
+Q ss_pred             eecccceeeEEEeCCccCCCccEEEEeCCCcc
+Q DRAFT             7 YKGRHWTGSVFLYGGRPDRSGAIWVRWDGKGL   38 (41)
+Q Consensus         7 ykgrhwtgsvflyggrpdrsgaiwvrwdgkgl   38 (41)
+                      ||||+..|..---+.....++..-|..||+-|
+T Consensus        36 YrGRrI~g~~~~~~~~~~~~~~~~V~IDGr~L   67 (109)
+T K4RFH5_STRDJ/1   36 YKGRRIQGRAASGGGHHDHGGGYGVFVDGVEL   67 (109)
+T ss_pred             eCCcEEEeEeCCCCCCcccCCceEEEECCEEc
+
+
+No 5
+>cd09621 CBM9_like_5; DOMON-like type 9 carbohydrate binding module. Family 9 carbohydrate-binding modules (CBM9) play a role in the microbial degradation of cellulose and hemicellulose (materials found in plants).
+Probab=48.10  E-value=36  Score=17.88  Aligned_cols=20  Identities=25%  Similarity=0.428  Sum_probs=0.0  Template_Neff=11.900
+
+Q ss_pred             eCCccCCCccEEEEeCCCcc
+Q DRAFT            19 YGGRPDRSGAIWVRWDGKGL   38 (41)
+Q Consensus        19 yggrpdrsgaiwvrwdgkgl   38 (41)
+                      +.+..+.+..+++.||.+.|
+T Consensus        22 ~~~~~~~~~~~~~~~d~~~l   41 (188)
+T cd09621          17 WTPQ-DLSAVGYTMWDDDYL   35 (182)
+T ss_pred             CCCcccceEEEEEEEcCCeE
+
+
+No 6
+>PF07494.12 ; Reg_prop ; Two component regulator propeller
+Probab=41.03  E-value=37  Score=11.31  Aligned_cols=9  Identities=33%  Similarity=1.136  Sum_probs=0.0  Template_Neff=11.900
+
+Q ss_pred             cCCCccEEE
+Q DRAFT            23 PDRSGAIWV   31 (41)
+Q Consensus        23 pdrsgaiwv   31 (41)
+                      .+..+.+|+
+T Consensus        12 ~~~~~~iw~   20 (24)
+T Q8XK91_CLOPE/5   12 KDSKGNVWI   20 (24)
+T ss_pred             ECCCCCEEE
+
+
+No 7
+>PF09871.10 ; DUF2098 ; Uncharacterized protein conserved in archaea (DUF2098)
+Probab=40.32  E-value=1.2e+02  Score=18.36  Aligned_cols=33  Identities=33%  Similarity=0.525  Sum_probs=0.0  Template_Neff=5.900
+
+Q ss_pred             ccceeecccceeeEEEeCCccCCCccEEEEeCCCcc
+Q DRAFT             3 SRYRYKGRHWTGSVFLYGGRPDRSGAIWVRWDGKGL   38 (41)
+Q Consensus         3 sryrykgrhwtgsvflyggrpdrsgaiwvrwdgkgl   38 (41)
+                      |.-||.+-.=+|-|--.-   +..|.+|+..|..+|
+T Consensus         6 ~~VrY~~TGT~G~V~~I~---e~~g~~Wa~LD~T~L   38 (90)
+T A0B846_METTP/2    6 SLVRYNGTGTVGVVKLIK---EEDGETWALLDSTDL   38 (90)
+T ss_pred             CEEEeCCCCCeEEEEEEE---EeCCeEEEEEcCCCc
+
+
+No 8
+>cd00241 DOMON_like; Domon-like ligand-binding domains. DOMON-like domains can be found in all three kindgoms of life and are a diverse group of ligand binding domains that have been shown to interact with sugars and hemes.
+Probab=38.30  E-value=81  Score=15.37  Aligned_cols=19  Identities=0%  Similarity=-0.096  Sum_probs=0.0  Template_Neff=12.700
+
+Q ss_pred             CCccCCCccEEEEeCC........Ccc
+Q DRAFT            20 GGRPDRSGAIWVRWDG........KGL   38 (41)
+Q Consensus        20 ggrpdrsgaiwvrwdg........kgl   38 (41)
+                      ++..+.+..+++.||+        ..|
+T Consensus        13 ~~~~~~~~~~~~~~d~........~~l   31 (158)
+T cd00241           8 -----HDVTYGFVFPPlatsgaqsTEF   29 (152)
+T ss_pred             CCCCCceEEEEEEEcC........CcE
+
+
+No 9
+>PF07088.12 ; GvpD ; GvpD gas vesicle protein
+Probab=34.91  E-value=1.2e+02  Score=20.97  Aligned_cols=38  Identities=13%  Similarity=0.324  Sum_probs=0.0  Template_Neff=9.500
+
+Q ss_pred             cccceeecccceeeEEEeCCccCCCccEEEEeCCCccee
+Q DRAFT             2 LSRYRYKGRHWTGSVFLYGGRPDRSGAIWVRWDGKGLVP   40 (41)
+Q Consensus         2 lsryrykgrhwtgsvflyggrpdrsgaiwvrwdgkglvp   40 (41)
+                      ++-+..|=....|++++||-.| +++...+..|...-.|
+T Consensus       469 ~ad~~i~l~~~~g~~~lyG~kP-~t~~y~i~~~~~~g~p  506 (514)
+T GVPD1_HALSA/23  469 VADMHFRLERSGDAIILYGENP-LTPLLGIGISQSESIP  506 (514)
+T ss_pred             HcceeEEEEEECCEEEEEEcCC-CCCeEEEEeecCCCCc
+
+
+No 10
+>PF16011.6 ; CBM9_2 ; Carbohydrate-binding family 9
+Probab=33.49  E-value=83  Score=17.28  Aligned_cols=19  Identities=0%  Similarity=-0.120  Sum_probs=0.0  Template_Neff=11.100
+
+Q ss_pred             CCccCCCccEEEEeCCCcc
+Q DRAFT            20 GGRPDRSGAIWVRWDGKGL   38 (41)
+Q Consensus        20 ggrpdrsgaiwvrwdgkgl   38 (41)
+                      +...+.+..+++.||+++|
+T Consensus        22 ~~~~~~~~~~~~~~d~~~L   40 (192)
+T F4C5M5_SPHS2/1   22 EYYYVPKVSFKIAYTDESI   40 (192)
+T ss_pred             ccCCCCeEEEEEEECCCEE
+
+
+No 11
+>4I0P_G HLA class II histocompatibility antigen, DO alpha chain; HLA-DM, HLA-DO, HLA-DR, peptide loading, Immune system, inhibitor, enzyme HLA-DM; HET: NAG, PGE, GOL; 3.2A {Homo sapiens}
+Probab=32.59  E-value=1.4e+02  Score=15.56  Aligned_cols=34  Identities=18%  Similarity=0.123  Sum_probs=0.0  Template_Neff=11.900
+
+Q ss_pred             ecccceeeEEEeCCccCCCccEEEEeCCCcceeC
+Q DRAFT             8 KGRHWTGSVFLYGGRPDRSGAIWVRWDGKGLVPL   41 (41)
+Q Consensus         8 kgrhwtgsvflyggrpdrsgaiwvrwdgkglvpl   41 (41)
+                      ||-|-...--.+-.....+|...+.+||+.++.+
+T Consensus         1 ~~~~~~~~~c~~~~~~~~~g~~~~~ydG~~f~~~   34 (181)
+T 4I0P_G            1 KADHMGSYGPAFYQSYGASGQFTHEFDEEQLFSV   34 (181)
+T ss_dssp             CCSEEEEEEEEEEETGGGEEEEEEEETTEEEEEE
+T ss_pred             CCcccceeeceEeEecCCCcceEEEeCCcEEEEe
+
+
+No 12
+>PF18106.2 ; Rol_Rep_N ; Rolling Circle replication initiation protein N-terminal domain
+Probab=28.76  E-value=1.5e+02  Score=16.26  Aligned_cols=34  Identities=15%  Similarity=0.272  Sum_probs=0.0  Template_Neff=8.400
+
+Q ss_pred             cceeecccceeeEEEeCCccCCCccEEEEeCCCc
+Q DRAFT             4 RYRYKGRHWTGSVFLYGGRPDRSGAIWVRWDGKG   37 (41)
+Q Consensus         4 ryrykgrhwtgsvflyggrpdrsgaiwvrwdgkg   37 (41)
+                      ++.|+-+---|.+.++.+..+....+.+...|+|
+T Consensus        38 ~~gY~~~~~~g~i~i~~~~~~~~~~~~l~lsG~G   71 (92)
+T A0A0D6XRJ7_9ST   38 LYFYNRSYTFGNIKIFYSDADETMGFHLQLSGSA   71 (92)
+T ss_pred             ccceeEEEEECCEEEEEeCCCCCcEEEEEEEhhH
+
+
+No 13
+>PF14231.7 ; GXWXG ; GXWXG protein
+Probab=27.66  E-value=29  Score=19.51  Aligned_cols=27  Identities=26%  Similarity=0.286  Sum_probs=0.0  Template_Neff=5.800
+
+Q ss_pred             cccceeeEEEeCCccCCCccEEEEeCCC
+Q DRAFT             9 GRHWTGSVFLYGGRPDRSGAIWVRWDGK   36 (41)
+Q Consensus         9 grhwtgsvflyggrpdrsgaiwvrwdgk   36 (41)
+                      |+.|.|..| ..|.|...-..-++|-||
+T Consensus        16 G~~W~G~~~-~TgHp~~~~L~~~~W~GK   42 (60)
+T A3GG70_PICST/2   16 GWKLKGYEV-ITGHPLEGLLSANGWFGK   42 (60)
+T ss_pred             CCeeecccc-cCCCcchhhHHHcCCCCE
+
+
+No 14
+>2XET_A F1 CAPSULE-ANCHORING PROTEIN; TRANSPORT PROTEIN; HET: SO4; 1.6A {YERSINIA PESTIS}
+Probab=27.57  E-value=1.6e+02  Score=14.60  Aligned_cols=20  Identities=30%  Similarity=0.582  Sum_probs=0.0  Template_Neff=10.300
+
+Q ss_pred             eeEEEeCCccCCCccEEEEeCC
+Q DRAFT            14 GSVFLYGGRPDRSGAIWVRWDG   35 (41)
+Q Consensus        14 gsvflyggrpdrsgaiwvrwdg   35 (41)
+                      |.+|+.+-.+  .+.+.|.|++
+T Consensus        38 G~v~l~~~~~--~~~~~v~~~~   57 (89)
+T 2XET_A           38 SGVYLTGLPK--KSKILVKWGR   57 (89)
+T ss_dssp             SEEEEEEECS--EEEEEEESCS
+T ss_pred             CEEEEEecCC--CcEEEEEeCC
+
+
+No 15
+>PF13496.7 ; DUF4120 ; Domain of unknown function (DUF4120)
+Probab=27.49  E-value=1.5e+02  Score=19.01  Aligned_cols=28  Identities=25%  Similarity=0.286  Sum_probs=0.0  Template_Neff=4.100
+
+Q ss_pred             cccceeecccceeeEEEeCCccCCCccE
+Q DRAFT             2 LSRYRYKGRHWTGSVFLYGGRPDRSGAI   29 (41)
+Q Consensus         2 lsryrykgrhwtgsvflyggrpdrsgai   29 (41)
+                      .+.++..|+...-.-.+|-|+||.|.|+
+T Consensus        56 F~~~~~~G~~gi~GGlI~HG~~d~s~Av   83 (95)
+T R6Y985_9BACT/2   56 FKERYPDGSLGVVGGLVYHGCPDRSCCF   83 (95)
+T ss_pred             EEEEeCCCCeeeEEEEEeCCCCCCcceE
+
+
+No 16
+>4JPQ_A Uncharacterized protein; Carbohydrate-binding family 9, PF16011, Structural Genomics, Joint Center for Structural Genomics, JCSG, Protein Structure Initiative, PSI-BIOLOGY; HET: CXS, MSE, SO4; 2.7A {Bacteroides uniformis}
+Probab=26.82  E-value=1.3e+02  Score=16.23  Aligned_cols=19  Identities=5%  Similarity=0.039  Sum_probs=0.0  Template_Neff=11.900
+
+Q ss_pred             CCccCCCccEEEEeCCCcc
+Q DRAFT            20 GGRPDRSGAIWVRWDGKGL   38 (41)
+Q Consensus        20 ggrpdrsgaiwvrwdgkgl   38 (41)
+                      ++..+.+..+.+.||+++|
+T Consensus        44 ~~~~~~~~~~~~~~d~~~L   62 (220)
+T 4JPQ_A           44 DYPYKPEVSFRIAHTGREI   62 (220)
+T ss_dssp             TSCCCCEEEEEEEECSSEE
+T ss_pred             cCCCCCeEEEEEEECCCEE
+
+
+No 17
+>PF13953.7 ; PapC_C ; PapC C-terminal domain
+Probab=25.29  E-value=1.7e+02  Score=14.20  Aligned_cols=21  Identities=38%  Similarity=0.803  Sum_probs=0.0  Template_Neff=9.600
+
+Q ss_pred             eeEEEeCCccCCCccEEEEeCCC
+Q DRAFT            14 GSVFLYGGRPDRSGAIWVRWDGK   36 (41)
+Q Consensus        14 gsvflyggrpdrsgaiwvrwdgk   36 (41)
+                      |.+|+.+-.+  .+.+.|+|++.
+T Consensus        36 G~~~l~~~~~--~~~~~v~~~~~   56 (67)
+T A6TGZ4_KLEP7/6   36 GQVYLTGLQK--KGQLLARWGEK   56 (67)
+T ss_pred             CEEEEEeeCC--CCEEEEEeCCC
+
+
+No 18
+>cd09619 CBM9_like_4; DOMON-like type 9 carbohydrate binding module. Family 9 carbohydrate-binding modules (CBM9) play a role in the microbial degradation of cellulose and hemicellulose (materials found in plants).
+Probab=24.92  E-value=1.6e+02  Score=15.01  Aligned_cols=19  Identities=21%  Similarity=0.305  Sum_probs=0.0  Template_Neff=12.400
+
+Q ss_pred             CCccCCCccEEEEeCCCcc
+Q DRAFT            20 GGRPDRSGAIWVRWDGKGL   38 (41)
+Q Consensus        20 ggrpdrsgaiwvrwdgkgl   38 (41)
+                      +...+.+..+++.||++.|
+T Consensus        31 ~~~~~~~~~~~~~~d~~~L   49 (187)
+T cd09619          30 ANASDLSANYKAMWDATYF   48 (181)
+T ss_pred             CCCccceEEEEEEEcCCcE
+
+
+No 19
+>1NNX_A Protein ygiW; ygiW, Structural Genomics, hypothetical protein, OB-fold, Structure 2 Function Project, S2F, UNKNOWN FUNCTION; 1.45A {Escherichia coli} SCOP: b.40.10.1
+Probab=24.78  E-value=1.2e+02  Score=17.45  Aligned_cols=15  Identities=47%  Similarity=0.446  Sum_probs=0.0  Template_Neff=8.000
+
+Q ss_pred             CCCccEEEEeCCCcc
+Q DRAFT            24 DRSGAIWVRWDGKGL   38 (41)
+Q Consensus        24 drsgaiwvrwdgkgl   38 (41)
+                      |.+|.|+|..+.+.+
+T Consensus        59 D~tG~I~V~i~~~~~   73 (109)
+T 1NNX_A           59 DASGTINVDIDHKRW   73 (109)
+T ss_dssp             ETTEEEEEECCGGGS
+T ss_pred             cCCCEEEEEeCchhh
+
+
+No 20
+>6U5J_E Collar PA0615; bacteriocin, pyocin, ANTIMICROBIAL PROTEIN; 3.5A {Pseudomonas aeruginosa (strain ATCC 15692 / DSM 22644 / CIP 104116 / JCM 14847 / LMG 12228 / 1C / PRS 101 / PAO1)}
+Probab=24.63  E-value=2.1e+02  Score=16.80  Aligned_cols=21  Identities=14%  Similarity=0.270  Sum_probs=0.0  Template_Neff=9.300
+
+Q ss_pred             eEEEeCCccCCCccEEEEeCC
+Q DRAFT            15 SVFLYGGRPDRSGAIWVRWDG   35 (41)
+Q Consensus        15 svflyggrpdrsgaiwvrwdg   35 (41)
+                      +|-.|.|+.++..+++|.+.|
+T Consensus        28 ~V~~y~g~~~~~Pav~v~~~~   48 (171)
+T 6U5J_E           28 LIGFWPGVPENTPAVSLEIAE   48 (171)
+T ss_dssp             CEESSCCCCCSSSEEEEEEEE
+T ss_pred             EEEeCCCCCCcCCEEEEEEee
+
+
+No 21
+>PF19083.1 ; DUF5774 ; Family of unknown function (DUF5774)
+Probab=24.42  E-value=1.3e+02  Score=20.23  Aligned_cols=23  Identities=26%  Similarity=0.358  Sum_probs=0.0  Template_Neff=4.600
+
+Q ss_pred             eCCccCCCccEEEEeCCCcceeC
+Q DRAFT            19 YGGRPDRSGAIWVRWDGKGLVPL   41 (41)
+Q Consensus        19 yggrpdrsgaiwvrwdgkglvpl   41 (41)
+                      ||...+..--+|++.++.+.+|+
+T Consensus        33 FG~~~~d~KLvW~~v~~~~~~Pi   55 (136)
+T F2WL84_9VIRU/4   33 YDLFVKDAKLVWFPVLGGKRVPL   55 (136)
+T ss_pred             cCccccCCEEEEEECcCCeeEEE
+
+
+No 22
+>6U5J_A Collar PA0615; bacteriocin, pyocin, ANTIMICROBIAL PROTEIN; 3.5A {Pseudomonas aeruginosa (strain ATCC 15692 / DSM 22644 / CIP 104116 / JCM 14847 / LMG 12228 / 1C / PRS 101 / PAO1)}
+Probab=23.18  E-value=2.4e+02  Score=16.57  Aligned_cols=21  Identities=14%  Similarity=0.270  Sum_probs=0.0  Template_Neff=9.300
+
+Q ss_pred             eEEEeCCccCCCccEEEEeCC
+Q DRAFT            15 SVFLYGGRPDRSGAIWVRWDG   35 (41)
+Q Consensus        15 svflyggrpdrsgaiwvrwdg   35 (41)
+                      .|-.|.|..++..+|+|.+.+
+T Consensus        28 ~V~~~~g~~~~~Pav~v~~~~   48 (171)
+T 6U5J_A           28 LIGFWPGVPENTPAVSLEIAE   48 (171)
+T ss_dssp             CEESSCCCCCSSSEEEEEEEE
+T ss_pred             EEEecCCCCCCCCEEEEEEee
+
+
+No 23
+>3L48_A Outer membrane usher protein PapC; Ig fold, greek key, Cell outer membrane, Fimbrium, Membrane, Transmembrane, Transport, TRANSPORT PROTEIN; 2.1A {Escherichia coli}
+Probab=22.58  E-value=2.6e+02  Score=15.31  Aligned_cols=24  Identities=38%  Similarity=0.598  Sum_probs=0.0  Template_Neff=8.500
+
+Q ss_pred             ceeeEEEeCCccCCCccEEEEeCCCc
+Q DRAFT            12 WTGSVFLYGGRPDRSGAIWVRWDGKG   37 (41)
+Q Consensus        12 wtgsvflyggrpdrsgaiwvrwdgkg   37 (41)
+                      +.|.+|+.+-.+.  +.+-|+|++.+
+T Consensus        41 ~~G~v~l~~~~~~--~~l~v~~~~~~   64 (94)
+T 3L48_A           41 DEGLAWLSGVTPG--ETLSVNWDGKI   64 (94)
+T ss_dssp             GGGEEEESSCCTT--CEEEEECSSSE
+T ss_pred             CCCEEEEeCCCCC--CEEEEEeCCCC
+
+
+No 24
+>3L48_E Outer membrane usher protein PapC; Ig fold, greek key, Cell outer membrane, Fimbrium, Membrane, Transmembrane, Transport, TRANSPORT PROTEIN; 2.1A {Escherichia coli}
+Probab=22.58  E-value=2.6e+02  Score=15.31  Aligned_cols=24  Identities=38%  Similarity=0.598  Sum_probs=0.0  Template_Neff=8.500
+
+Q ss_pred             ceeeEEEeCCccCCCccEEEEeCCCc
+Q DRAFT            12 WTGSVFLYGGRPDRSGAIWVRWDGKG   37 (41)
+Q Consensus        12 wtgsvflyggrpdrsgaiwvrwdgkg   37 (41)
+                      +.|.+|+.+-.+.  +.+-|+|++.+
+T Consensus        41 ~~G~v~l~~~~~~--~~l~v~~~~~~   64 (94)
+T 3L48_E           41 DEGLAWLSGVTPG--ETLSVNWDGKI   64 (94)
+T ss_dssp             GGGEEEECSCCTT--CEEEEEETTEE
+T ss_pred             CCCEEEEeCCCCC--CEEEEEeCCCC
+
+
+No 25
+>PF08869.12 ; XisI ; XisI protein
+Probab=22.25  E-value=1.2e+02  Score=18.34  Aligned_cols=11  Identities=27%  Similarity=0.924  Sum_probs=0.0  Template_Neff=6.700
+
+Q ss_pred             CCccEEEEeCC
+Q DRAFT            25 RSGAIWVRWDG   35 (41)
+Q Consensus        25 rsgaiwvrwdg   35 (41)
+                      ..|.||+.+|+
+T Consensus        64 ~dgKIwIq~d~   74 (110)
+T K9WD31_9CYAN/1   64 KNGKIWIQHNM   74 (110)
+T ss_pred             eCCceEEecCc
+
+
+No 26
+>4OR1_A Invasin homolog AafB, Major fimbrial subunit of aggregative adherence fimbria II AafA chimeric construct; biofilm, chaperone-usher, pilus, adhesion, fibronectin, fimbriae, fibre, immunoglobulin-like, Outer membrane pilus, CELL ADHESION; 3.0A {Escherichia coli} SCOP: b.2.3.0, l.1.1.1
+Probab=21.93  E-value=2.4e+02  Score=18.42  Aligned_cols=28  Identities=21%  Similarity=0.523  Sum_probs=0.0  Template_Neff=6.200
+
+Q ss_pred             eeeEEEeCCccCCCccEEEEeCCCccee
+Q DRAFT            13 TGSVFLYGGRPDRSGAIWVRWDGKGLVP   40 (41)
+Q Consensus        13 tgsvflyggrpdrsgaiwvrwdgkglvp   40 (41)
+                      .+..+..-|+.+....|.||..|.+..|
+T Consensus        60 ~~~~y~l~Gknn~~n~L~VrL~g~~w~~   87 (155)
+T 4OR1_A           60 RPGHYIVQGSKDTQSKLWVRLGREGWTS   87 (155)
+T ss_dssp             CTTEEEEECSSCSSCEEEEEECSSSCBC
+T ss_pred             CCcEEEEEecCCCCCEEEEEEecCCccC
+
+
+No 27
+>1DSV_A NUCLEIC ACID BINDING PROTEIN P14; CCHC type zinc finger, VIRUS/VIRAL PROTEIN, Viral protein; HET: ZN; NMR {Mouse mammary tumor virus} SCOP: g.40.1.1
+Probab=21.87  E-value=67  Score=14.94  Aligned_cols=6  Identities=67%  Similarity=1.569  Sum_probs=0.0  Template_Neff=7.300
+
+Q ss_pred             ecccce
+Q DRAFT             8 KGRHWT   13 (41)
+Q Consensus         8 kgrhwt   13 (41)
+                      ||.||+
+T Consensus        10 kg~Hwa   15 (31)
+T 1DSV_A           10 KGYHWK   15 (31)
+T ss_dssp             SSBSCT
+T ss_pred             CCCchh
+
+
+No 28
+>cd09620 CBM9_like_3; DOMON-like type 9 carbohydrate binding module. Family 9 carbohydrate-binding modules (CBM9) play a role in the microbial degradation of cellulose and hemicellulose (materials found in plants).
+Probab=21.87  E-value=2.1e+02  Score=15.34  Aligned_cols=19  Identities=21%  Similarity=0.316  Sum_probs=0.0  Template_Neff=11.700
+
+Q ss_pred             CCccCCCccEEEEeCCCcc
+Q DRAFT            20 GGRPDRSGAIWVRWDGKGL   38 (41)
+Q Consensus        20 ggrpdrsgaiwvrwdgkgl   38 (41)
+                      ++..+.+..+++.||.++|
+T Consensus        25 ~~~~~~~~~~~~~~d~~~L   43 (200)
+T cd09620          27 RPKPRYRTRAKMLWDDTYL   45 (205)
+T ss_pred             CCCCCcceEEEEEEcCCeE
+
+
+No 29
+>2MJC_A Eukaryotic translation initiation factor 3 subunit G; zinc-binding domain, METAL BINDING PROTEIN; HET: ZN; NMR {Homo sapiens}
+Probab=21.42  E-value=69  Score=15.75  Aligned_cols=14  Identities=43%  Similarity=0.769  Sum_probs=0.0  Template_Neff=6.500
+
+Q ss_pred             Ccccceeecccceee
+Q DRAFT             1 MLSRYRYKGRHWTGS   15 (41)
+Q Consensus         1 mlsryrykgrhwtgs   15 (41)
+                      +..|+- +|-|||..
+T Consensus        10 ~~cR~C-~g~H~t~~   23 (34)
+T 2MJC_A           10 VSCRIC-KGDHWTTR   23 (34)
+T ss_dssp             CCCSSS-CSSSCSTT
+T ss_pred             eEeeec-CCCccccc
+
+
+No 30
+>cd19264 AdoMet_MTase_I; class I SAM-binding methyltransferase. S-adenosylmethionine-dependent methyltransferases (SAM or AdoMet-MTase), class I.
+Probab=21.14  E-value=1.4e+02  Score=17.05  Aligned_cols=16  Identities=19%  Similarity=0.162  Sum_probs=0.0  Template_Neff=11.300
+
+Q ss_pred             cceeecccceeeEEEe
+Q DRAFT             4 RYRYKGRHWTGSVFLY   19 (41)
+Q Consensus         4 ryrykgrhwtgsvfly   19 (41)
+                      +|..+..--+|+-|+|
+T Consensus       238 ~~~~~~~~~~~~~~~~  253 (255)
+T cd19264         238 EIHHLQEIDIGYRFIY  253 (255)
+T ss_pred             eeeccceeccceEEEE
+
+
+No 31
+>1WPI_A Hypothetical 15.6 kDa protein in NAP1-TRK2 intergenic region; STRUCTURAL GENOMICS, OCSP, NESG, PROTEIN STRUCTURE INITIATIVE, PSI-2, Northeast Structural Genomics Consortium, UNKNOWN FUNCTION; NMR {Saccharomyces cerevisiae} SCOP: c.47.1.18
+Probab=21.03  E-value=1.5e+02  Score=17.25  Aligned_cols=13  Identities=38%  Similarity=1.117  Sum_probs=0.0  Template_Neff=8.500
+
+Q ss_pred             CCCccEEEEeCCC
+Q DRAFT            24 DRSGAIWVRWDGK   36 (41)
+Q Consensus        24 drsgaiwvrwdgk   36 (41)
+                      .|.+.|||.|+..
+T Consensus       104 ~rP~~ivVd~~~~  116 (133)
+T 1WPI_A          104 NPKEALWVDWENK  116 (133)
+T ss_dssp             CCCCCEEEESSSC
+T ss_pred             CCCCcEEEcCCCC
+
+
+No 32
+>cd03899 bacterial_lipase; x. alpha/beta hydrolase fold. This catalytic domain is found in a very wide range of enzymes.
+Probab=20.35  E-value=71  Score=19.07  Aligned_cols=37  Identities=16%  Similarity=0.049  Sum_probs=0.0  Template_Neff=10.600
+
+Q ss_pred             ceeecccceeeEEEeCCc--cCCCccEEEEeCCCcceeC
+Q DRAFT             5 YRYKGRHWTGSVFLYGGR--PDRSGAIWVRWDGKGLVPL   41 (41)
+Q Consensus         5 yrykgrhwtgsvflyggr--pdrsgaiwvrwdgkglvpl   41 (41)
+                      +.|....+|...+.|+..  ........+.-||.|.||+
+T Consensus       192 ~~~~~~~~t~~~~~~~~~~~~~~~~~~~~~~~gDGtVp~  230 (276)
+T cd03899         192 YSWSGSSPLTNFLDPSDAFLGASSLTFKNGTANDGLVGT  230 (276)
+T ss_pred             EeccccCccccCCCccccccccccccccCCCCCCccccc
+
+
