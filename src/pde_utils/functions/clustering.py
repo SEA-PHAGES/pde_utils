@@ -391,12 +391,99 @@ def calculate_DB_index(matrix, submatricies, is_distance=True):
     return db_index
 
 
-def calculate_silhouette(matrix, submatricies, is_distance=True):
-    centroid_index_submatrix_map = {}
+def calculate_silhouette_coeffecient(matrix, submatricies, is_distance=True):
+    cent_index_submatrix_map = {}
     for submatrix in submatricies:
         centroid = submatrix.get_centroid()
         centroid_index = matrix.get_index_from_label(centroid)
-        centroid_index_submatrix_map[centroid_index] = submatrix
+        cent_index_submatrix_map[centroid_index] = submatrix
+
+    centroid_matrix = matrix.get_submatrix_from_indicies(
+                                        list(cent_index_submatrix_map.keys()))
+
+    mean_value_A_maps = dict()
+    for centroid_index, query_submatrix in cent_index_submatrix_map.items():
+        mean_value_A_map = dict()
+        for member in query_submatrix.labels():
+            a = query_submatrix.get_average_edge()
+            mean_value_A_map[member] = a
+
+        mean_value_A_maps[centroid_index] = mean_value_A_map
+
+    SC = 0
+    s_counter = 0
+    s_coeffecient_maps = dict()
+    for centroid in centroid_matrix.labels:
+        s_coeffecient_map = dict()
+
+        cent_index = matrix.get_index_from_label(centroid)
+        centroid_distances = centroid_matrix.get_row(cent_index,
+                                                     exclude_diagonal=True)
+
+        i_matrix = cent_index_submatrix_map[cent_index]
+
+        nearest_centroid = centroid_matrix.get_label_from_index(
+                                    min(range(len(centroid_distances)),
+                                        key=lambda x: centroid_distances[x]))
+        nearest_cent_index = matrix.get_label_from_index(nearest_centroid)
+
+        j_matrix = cent_index_submatrix_map[nearest_cent_index]
+        j_matrix_indicies = list()
+        for j_member in j_matrix.labels:
+            j_matrix_indicies.append(matrix.get_index_from_label(j_member))
+
+        mean_value_A_map = mean_value_A_maps[cent_index]
+        for i_member in i_matrix:
+            i_index = matrix.get_index_from_label(i_member)
+
+            b = 0
+            for j_index in j_matrix_indicies:
+                b += matrix.matrix[i_index][j_index]
+
+            b /= len(j_matrix_indicies)
+            a = mean_value_A_map[i_member]
+
+            s_divisor = max([b, a])
+            if is_distance:
+                s_dividend = b - a
+            else:
+                s_dividend = a - b
+
+            s = s_dividend / s_divisor
+            s_coeffecient_map[i_member] = s
+            s_counter += 1
+            SC += s
+
+        s_coeffecient_maps[centroid] = s_coeffecient_map
+
+    SC /= s_counter
+    return SC, s_coeffecient_maps
+
+
+def calculate_error_sum_of_squares(matrix, submatricies, is_distance=True,
+                                   max_value=1):
+    if len(submatricies) < 1:
+        return 0
+
+    total_SSE = 0
+    for submatrix in submatricies:
+        centroid = submatrix.get_centroid()
+
+        SSE = 0
+        row = submatrix.get_row(centroid, exclude_diagonal=True)
+
+        if len(row) > 1:
+            for value in row:
+                if is_distance:
+                    SSE += value ** 2
+                else:
+                    SSE += (max_value - value) ** 2
+
+        total_SSE += SSE
+
+    total_SSE /= len(submatricies)
+    return total_SSE
+    pass
 
 
 # UPGMA HELPER FUNCTIONS
