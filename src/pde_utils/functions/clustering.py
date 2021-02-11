@@ -404,8 +404,8 @@ def calculate_silhouette_coeffecient(matrix, submatricies, is_distance=True):
     mean_value_A_maps = dict()
     for centroid_index, query_submatrix in cent_index_submatrix_map.items():
         mean_value_A_map = dict()
-        for member in query_submatrix.labels():
-            a = query_submatrix.get_average_edge()
+        for member in query_submatrix.labels:
+            a = query_submatrix.get_average_edge(member)
             mean_value_A_map[member] = a
 
         mean_value_A_maps[centroid_index] = mean_value_A_map
@@ -413,19 +413,29 @@ def calculate_silhouette_coeffecient(matrix, submatricies, is_distance=True):
     SC = 0
     s_counter = 0
     s_coeffecient_maps = dict()
-    for centroid in centroid_matrix.labels:
+    for num_centroid in range(len(centroid_matrix.labels)):
+        centroid = centroid_matrix.labels[num_centroid]
         s_coeffecient_map = dict()
 
         cent_index = matrix.get_index_from_label(centroid)
-        centroid_distances = centroid_matrix.get_row(cent_index,
+        centroid_distances = centroid_matrix.get_row(num_centroid,
                                                      exclude_diagonal=True)
 
         i_matrix = cent_index_submatrix_map[cent_index]
 
+        if is_distance:
+            nearest_centroid = min(range(len(centroid_distances)),
+                                   key=lambda x: centroid_distances[x])
+        else:
+            nearest_centroid = max(range(len(centroid_distances)),
+                                   key=lambda x: centroid_distances[x])
+
+        if nearest_centroid >= num_centroid:
+            nearest_centroid += 1
+
         nearest_centroid = centroid_matrix.get_label_from_index(
-                                    min(range(len(centroid_distances)),
-                                        key=lambda x: centroid_distances[x]))
-        nearest_cent_index = matrix.get_label_from_index(nearest_centroid)
+                                                nearest_centroid)
+        nearest_cent_index = matrix.get_index_from_label(nearest_centroid)
 
         j_matrix = cent_index_submatrix_map[nearest_cent_index]
         j_matrix_indicies = list()
@@ -433,7 +443,7 @@ def calculate_silhouette_coeffecient(matrix, submatricies, is_distance=True):
             j_matrix_indicies.append(matrix.get_index_from_label(j_member))
 
         mean_value_A_map = mean_value_A_maps[cent_index]
-        for i_member in i_matrix:
+        for i_member in i_matrix.labels:
             i_index = matrix.get_index_from_label(i_member)
 
             b = 0
@@ -468,9 +478,10 @@ def calculate_error_sum_of_squares(matrix, submatricies, is_distance=True,
     total_SSE = 0
     for submatrix in submatricies:
         centroid = submatrix.get_centroid()
+        cent_index = submatrix.get_index_from_label(centroid)
 
         SSE = 0
-        row = submatrix.get_row(centroid, exclude_diagonal=True)
+        row = submatrix.get_row(cent_index, exclude_diagonal=True)
 
         if len(row) > 1:
             for value in row:
