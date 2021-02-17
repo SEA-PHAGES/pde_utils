@@ -223,8 +223,8 @@ def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
                       f"STEPPING DOWN TO {physical_cores} PROCESSES")
             threads = physical_cores
 
-    hhsuitedb.create_hhsuitedb(aln_dir, db_dir, db_name, threads=threads,
-                               verbose=verbose, pham_versions=db_version)
+    hhsuitedb.create_hhsuitedb(aln_dir, db_dir, db_name, cores=threads,
+                               verbose=verbose, versions=db_version)
 
 
 def execute_make_blast_database(alchemist, values, db_dir, db_name, db_version,
