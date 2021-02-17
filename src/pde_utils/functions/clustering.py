@@ -453,13 +453,17 @@ def calculate_silhouette_coeffecient(matrix, submatricies, is_distance=True):
             b /= len(j_matrix_indicies)
             a = mean_value_A_map[i_member]
 
-            s_divisor = max([b, a])
+            s_divisor = float(max([b, a]))
             if is_distance:
-                s_dividend = b - a
+                s_dividend = float(b - a)
             else:
-                s_dividend = a - b
+                s_dividend = float(a - b)
 
-            s = s_dividend / s_divisor
+            if s_divisor == 0:
+                s = 1
+            else:
+                s = s_dividend / s_divisor
+
             s_coeffecient_map[i_member] = s
             s_counter += 1
             SC += s
