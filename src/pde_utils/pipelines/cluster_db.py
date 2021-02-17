@@ -22,7 +22,7 @@ TEMP_DIR = (f"/tmp/{DEFAULT_FOLDER_NAME}_temp")
 
 CLUSTER_DB_SUBPIPELINES = ["analyze", "cluster"]
 DEFAULT_SETTINGS = {"kmer": 15, "sketch": 25000, "gcs": 0.35, "ani": 0.7,
-                    "gcsmax": 0.90, "animax": 0.95, "gcsS": 0.8, "gcsM": 2,
+                    "gcsmax": 0.55, "animax": 0.95, "gcsS": 0.8, "gcsM": 2,
                     "aniS": 0, "aniM": 1}
 
 CLUSTER_ANALYSIS_HEADER = ["Subject PhageID", "Subject Cluster",
@@ -414,7 +414,22 @@ def cluster_db(matrix, eps, cores=1, verbose=False, is_distance=False,
         unclustered_matrix = matrix.get_submatrix_from_labels(
                                                 list(new_unclustered_members))
 
-    return iter_scheme
+    if verbose:
+        print("...Finalizing clustering scheme...")
+
+    iter_scheme_centroids = list()
+    for cluster, cluster_members in iter_scheme.items():
+        if cluster is None:
+            continue
+
+        submatrix = matrix.get_submatrix_from_labels(cluster_members)
+        iter_scheme_centroids.append(submatrix.get_centroid())
+
+    final_scheme = clustering.lloyds(matrix, iter_scheme_centroids,
+                                     eps=eps, is_distance=is_distance,
+                                     return_matrix=False)
+
+    return final_scheme
 
 
 def iter_cluster_process(submatrix, is_distance, emin, emax, S, M):
