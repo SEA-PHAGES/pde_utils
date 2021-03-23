@@ -2,10 +2,10 @@ import argparse
 from decimal import Decimal
 import math
 import multiprocessing
+import re
 import shutil
 import sys
 import time
-from threading import Lock
 from pathlib import Path
 import pickle
 import random
@@ -14,7 +14,7 @@ from Bio.Application import ApplicationError
 from pdm_utils.functions import (basic, configfile, fileio as pdm_fileio,
                                  multithread, parallelize, pipelines_basic)
 
-from pde_utils.classes import pan_models
+from pde_utils.classes import (pan_models, hhsuite)
 from pde_utils.functions import (alignment, pan_handling, fileio as pde_fileio,
                                  search)
 
@@ -23,11 +23,11 @@ from pde_utils.functions import (alignment, pan_handling, fileio as pde_fileio,
 TEMP_DIR = Path("/tmp/pde_utils_build_pan_cache")
 DEFAULT_FOLDER_NAME = f"{time.strftime('%Y%m%d')}_pan"
 
-PAN_GRAPH_EDGEWEIGHTS = ["CentroidDistance", "DBSeparation", "MinDistance"]
+PHAM_HMM_NAME_FORMAT = re.compile(r"\[pham (\d+)\]")
+
+
 # MAIN FUNCTIONS
 # -----------------------------------------------------------------------------
-
-
 def main(unparsed_args_list):
     args = parse_build_pan(unparsed_args_list)
 
@@ -42,7 +42,7 @@ def main(unparsed_args_list):
                       folder_name=args.folder_name,
                       values=values, verbose=args.verbose,
                       filters=args.filters, groups=args.groups,
-                      threads=args.number_threads, M=args.min_percent_gaps,
+                      cores=args.number_processes, M=args.min_percent_gaps,
                       aD=args.avg_distance, mD=args.min_distance,
                       B=args.DB_stiffness, PANgraph_out=args.PANgraph_out)
 
@@ -98,9 +98,9 @@ def parse_build_pan(unparsed_args_list):
                 {Table}.{Column}={Value}
         """
 
-    NUMBER_THREADS_HELP = """
-        Pipeline option that allows for multithreading of workflows.
-            Follow selection argument with number of threads to be used
+    NUMBER_PROCESSES_HELP = """
+        Pipeline option that allows for parallel processing of workflows.
+            Follow selection argument with number of cores to be used
         """
     DB_STIFFNESS_HELP = """
         PAN building option that controls the cutoff for the DB separation
@@ -168,13 +168,13 @@ def parse_build_pan(unparsed_args_list):
     parser.add_argument("-g", "--group_by", nargs="+",
                         help=GROUP_BY_HELP,
                         dest="groups")
-    parser.add_argument("-np", "--number_threads", type=int, nargs="?",
-                        help=NUMBER_THREADS_HELP)
+    parser.add_argument("-np", "--number_processes", type=int, nargs="?",
+                        help=NUMBER_PROCESSES_HELP)
 
     parser.set_defaults(folder_name=DEFAULT_FOLDER_NAME, folder_path=None,
                         config_file=None, verbose=False, input=[],
                         filters="", groups=[], hhsuite_database=None,
-                        db_name=None, number_threads=1,
+                        db_name=None, number_processes=1,
                         DB_stiffness=0.2, avg_distance=75, min_distance=65,
                         min_percent_gaps=50, PANgraph_out=None)
 
@@ -185,7 +185,7 @@ def parse_build_pan(unparsed_args_list):
 def execute_build_pan(alchemist, hhdb_path=None, pan_name=None,
                       folder_path=None, folder_name=DEFAULT_FOLDER_NAME,
                       values=None, verbose=False, filters="", groups=[],
-                      threads=1, M=50, aD=75, mD=65, B=0.2,
+                      cores=1, M=50, aD=75, mD=65, B=0.2, Prob=90,
                       PANgraph_out=None):
     db_filter = pipelines_basic.build_filter(alchemist, "pham", filters,
                                              values=values)
@@ -220,66 +220,57 @@ def execute_build_pan(alchemist, hhdb_path=None, pan_name=None,
 
         pham_data_dir = mapped_path.joinpath("pham_alns")
         pham_data_dir.mkdir()
-        data_maps_tuple = create_pham_alns(
-                                        alchemist.engine, db_filter.values,
-                                        pham_data_dir, threads=threads, M=M,
-                                        verbose=verbose)
+        data_maps_tuple = create_pham_alns(alchemist, db_filter.values,
+                                           pham_data_dir, cores=cores, M=M,
+                                           verbose=verbose)
 
         build_pan_nodes(pan_alchemist, db_filter.values, data_maps_tuple,
-                        threads=threads, verbose=verbose)
+                        threads=cores, verbose=verbose)
 
         cent_data_dir = mapped_path.joinpath("cent_alns")
         cent_data_dir.mkdir()
         build_pan_neighborhoods(alchemist, pan_alchemist, db_filter.values,
                                 cent_data_dir, data_maps_tuple,
                                 aD=aD, mD=mD, B=B,
-                                threads=threads, verbose=verbose)
-
-        hmm_data_dir = mapped_path.joinpath("pham_hhrs")
-        hmm_data_dir.mkdir()
+                                threads=cores, verbose=verbose)
 
         if hhdb_path is not None:
-            raise NotImplementedError(
-                                "Town building is not implemented yet... :(")
-            if verbose:
-                print("...Calculating pham HMM profiles...")
-            hmm_path_map = alignment.create_hmms(data_maps_tuple[0], name=True,
-                                                 M=M, threads=threads,
-                                                 verbose=verbose)
+            hmm_data_dir = mapped_path.joinpath("pham_hhrs")
+            hmm_data_dir.mkdir()
             build_pan_towns(alchemist, pan_alchemist, hhdb_path,
-                            hmm_data_dir, hmm_path_map,
-                            threads=threads, verbose=verbose)
+                            data_maps_tuple[0], hmm_data_dir, M=M, Prob=Prob,
+                            cores=cores, verbose=verbose)
 
         if PANgraph_out is not None:
             pan_graph = pan_handling.to_networkx(pan_alchemist)
-            pde_fileio.write_graph(pan_graph, PANgraph_out,
-                                   mapped_path, pan_name,
-                                   edge_weights=PAN_GRAPH_EDGEWEIGHTS)
+            pde_fileio.write_graph(
+                            pan_graph, PANgraph_out, mapped_path, pan_name,
+                            edge_weights=pan_handling.PAN_GRAPH_EDGEWEIGHTS)
 
         shutil.rmtree(Path(TEMP_DIR))
 
 
 def build_pan_nodes(pan_alchemist, values, data_maps_tuple, threads=1,
                     verbose=False):
-    pan_nodes_dict = {}
-    pan_lock = Lock()
-
     work_items = []
     for pham in values:
         aln_path = data_maps_tuple[0].get(pham)
         mat_path = data_maps_tuple[1].get(pham)
         tree_path = data_maps_tuple[2].get(pham)
 
-        work_items.append((pan_nodes_dict, pham, aln_path, mat_path,
-                           tree_path, pan_lock))
+        work_items.append((pham, aln_path, mat_path, tree_path))
 
-    multithread.multithread(work_items, threads, build_pan_nodes_threadtask,
-                            verbose=verbose)
+    if verbose:
+        print("...Compiling pham alignment data...")
+
+    pan_nodes = multithread.multithread(work_items, threads,
+                                        build_pan_nodes_threadtask,
+                                        verbose=verbose)
 
     if verbose:
         print("...Writing pham data to PAN...")
 
-    clusters = list(pan_nodes_dict.values())
+    clusters = list(pan_nodes)
     pan_alchemist.session.add_all(clusters)
     pan_alchemist.session.commit()
     pan_alchemist.session.close()
@@ -340,11 +331,18 @@ def build_pan_neighborhoods(alchemist, pan_alchemist, values, data_dir,
     pan_alchemist.session.close()
 
 
-def build_pan_towns(alchemist, pan_alchemist, hhdb_path, pan_dict,
-                    hmm_data_dir, data_maps_tuple, threads=1, verbose=False):
+def build_pan_towns(alchemist, pan_alchemist, hhdb_path, aln_path_map,
+                    hmm_data_dir, M=50, cores=1, Prob=90,
+                    verbose=False):
+    if verbose:
+        print("...Calculating pham HMM profiles...")
+    hmm_path_map = alignment.create_hmms(aln_path_map, name=True,
+                                         M=M, cores=cores,
+                                         verbose=verbose)
+
     work_items = []
     hhr_path_map = {}
-    for pham, hmm_path in data_maps_tuple[3].items():
+    for pham, hmm_path in hmm_path_map.items():
         hhr_path = hmm_data_dir.joinpath(".".join([str(pham), "hhr"]))
         hhr_path_map[pham] = hhr_path
 
@@ -354,32 +352,38 @@ def build_pan_towns(alchemist, pan_alchemist, hhdb_path, pan_dict,
     if verbose:
         print("...Performing iterations of hhblitz to find HMM-HMM "
               "relationships...")
-    parallelize.parallelize(work_items, threads, search.hhblits,
+    parallelize.parallelize(work_items, cores, search.hhblits,
                             verbose=verbose)
+
+    work_items = []
+    for pham, hhr_path in hhr_path_map.items():
+        work_items.append((pham, hhr_path, Prob))
+
+    if verbose:
+        print("...Parsing HMM-HMM pham alignment data...")
+
+    hmm_edge_chunks = multithread.multithread(
+                                    work_items, cores,
+                                    build_town_edge_process, verbose=verbose)
+
+    hmm_edges = list()
+    for chunk in hmm_edge_chunks:
+        hmm_edges += chunk
+
+    if verbose:
+        print("...Writing town data to PAN...")
+    pan_alchemist.session.add_all(hmm_edges)
+    pan_alchemist.session.commit()
+    pan_alchemist.session.close()
 
 
 # HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
-
-
-def create_pham_alns(engine, values, aln_dir, threads=1, M=50, verbose=False,
-                     data_cache=None):
-    if data_cache is None:
-        data_cache = {}
-
-    if verbose:
-        print("...Writing pham fastas...")
-    fasta_path_map = alignment.create_pham_fastas(engine, values, aln_dir,
-                                                  data_cache=data_cache,
-                                                  threads=threads,
-                                                  verbose=verbose)
-
-    if verbose:
-        print("...Aligning pham fastas...")
-    aln_path_map = alignment.align_fastas(fasta_path_map,
-                                          mat_out=True, tree_out=True,
-                                          threads=threads, override=True,
-                                          verbose=verbose)
+def create_pham_alns(alchemist, values, aln_dir, cores=1, M=50, verbose=False):
+    aln_path_map = alignment.create_named_pham_alns(
+                                            alchemist, values, aln_dir,
+                                            mat_out=True, tree_out=True,
+                                            cores=cores, verbose=verbose)
 
     mat_path_map = {}
     tree_path_map = {}
@@ -393,6 +397,43 @@ def create_pham_alns(engine, values, aln_dir, threads=1, M=50, verbose=False,
     return (aln_path_map, mat_path_map, tree_path_map)
 
 
+# TOWN HELPER FUNCTIONS
+# -----------------------------------------------------------------------------
+def build_town_edge_process(pham, hhr_path, Prob):
+    hhresult = hhsuite.HHResult(hhr_path)
+    hhresult.parse_result()
+
+    hmm_edges = list()
+    for hhmatch in hhresult.matches:
+        probability = float(hhmatch.probability)
+        if probability < Prob:
+            continue
+
+        if re.search(PHAM_HMM_NAME_FORMAT, hhmatch.target_id) is not None:
+            target = re.split(PHAM_HMM_NAME_FORMAT, hhmatch.target_id)[1]
+            if int(pham) == int(target):
+                continue
+        else:
+            target = hhmatch.target_id
+
+        hmm_edges.append(build_hmm_edge(pham, target, probability, hhmatch))
+
+    return hmm_edges
+
+
+def build_hmm_edge(source, target, probability, hhmatch):
+    return pan_models.HMMEdge(Source=source, Target=target,
+                              Probability=probability,
+                              Expect=float(hhmatch.expect),
+                              AlignedCols=int(hhmatch.match_cols),
+                              SourceStart=int(hhmatch.query_start),
+                              SourceEnd=int(hhmatch.query_end),
+                              TargetStart=int(hhmatch.hit_start),
+                              TargetEnd=int(hhmatch.hit_end))
+
+
+# NEIGHBORHOOD HELPER FUNCTIONS
+# -----------------------------------------------------------------------------
 def create_centroid_graph(pan_alchemist, clusters, aln_dir, threads=1,
                           verbose=False):
     thread_manager = multiprocessing.Manager()
@@ -508,16 +549,12 @@ def distance_to_graph(source_id, source_str, target_id, target_str):
     return (source_id, target_id, {"CentroidDistance": distance})
 
 
-def build_pan_nodes_threadtask(pan_dict, pham, aln_path, mat_path,
-                               tree_path, pan_lock):
+def build_pan_nodes_threadtask(pham, aln_path, mat_path, tree_path):
     cluster = pan_handling.parse_cluster(pham, MSA_path=aln_path,
                                          PIM_path=mat_path, GT_path=tree_path)
     cluster.parse_centroid()
     cluster.parse_spread()
-
-    pan_lock.acquire()
-    pan_dict[pham] = cluster
-    pan_lock.release()
+    return cluster
 
 
 def write_centroids_threadtask(temp_dir, source_path, target_path,

@@ -12,7 +12,6 @@ from psutil import cpu_count
 from pde_utils.classes import clustal
 from pde_utils.functions import alignment
 from pde_utils.functions import blastdb
-from pde_utils.functions import fileio as pde_fileio
 from pde_utils.functions import hhsuitedb
 
 
@@ -39,7 +38,7 @@ def main(unparsed_args_list):
                     folder_name=args.folder_name, values=values,
                     verbose=args.verbose, filters=args.filters,
                     groups=args.groups, db_name=args.database_name,
-                    threads=args.threads, use_mpi=args.use_mpi)
+                    cores=args.cores, use_mpi=args.use_mpi)
 
 
 def parse_make_db(unparsed_args_list):
@@ -93,7 +92,7 @@ def parse_make_db(unparsed_args_list):
     """
     NUMBER_THREADS_HELP = """
         Pipeline option that allows for multithreading of workflows.
-            Follow selection argument with number of threads to be used
+            Follow selection argument with number of cores to be used
         """
 
     MPI_HELP = """
@@ -109,7 +108,7 @@ def parse_make_db(unparsed_args_list):
     hhsuite_parser = subparsers.add_parser("hhsuite")
     blast_parser = subparsers.add_parser("blast")
 
-    hhsuite_parser.add_argument("-np", "--threads", type=int, nargs="?",
+    hhsuite_parser.add_argument("-np", "--cores", type=int, nargs="?",
                                 help=NUMBER_THREADS_HELP)
     hhsuite_parser.add_argument("-mpi", "--use_mpi", action="store_true",
                                 help=MPI_HELP)
@@ -142,7 +141,7 @@ def parse_make_db(unparsed_args_list):
         subparser.set_defaults(folder_name=DEFAULT_FOLDER_NAME,
                                folder_path=None, verbose=False, input=[],
                                filters="", groups=[],
-                               database_name=None, threads=1, use_mpi=False)
+                               database_name=None, cores=1, use_mpi=False)
 
     parsed_args = parser.parse_args(unparsed_args_list[2:])
     return parsed_args
@@ -150,7 +149,7 @@ def parse_make_db(unparsed_args_list):
 
 def execute_make_db(alchemist, db_type, values=None, folder_path=None,
                     folder_name=DEFAULT_FOLDER_NAME, verbose=False, filters="",
-                    groups=[], db_name=None, threads=1, use_mpi=False,
+                    groups=[], db_name=None, cores=1, use_mpi=False,
                     mol_type=None, hash_index=False, parse_seqids=True,
                     gi_mask=False, mask_data=None, mask_id=None, logfile=None,
                     tax_id=None, tax_id_map=None):
@@ -191,7 +190,7 @@ def execute_make_db(alchemist, db_type, values=None, folder_path=None,
             execute_make_hhsuite_database(alchemist, db_filter.values,
                                           mapped_path, db_name, db_version,
                                           data_cache=data_cache,
-                                          threads=threads, verbose=verbose,
+                                          cores=cores, verbose=verbose,
                                           use_mpi=use_mpi)
         elif db_type == "blast":
             execute_make_blast_database(
@@ -204,26 +203,25 @@ def execute_make_db(alchemist, db_type, values=None, folder_path=None,
 
 def execute_make_hhsuite_database(alchemist, values, db_dir, db_name,
                                   db_version,
-                                  data_cache=None, verbose=False, threads=1,
+                                  data_cache=None, verbose=False, cores=1,
                                   use_mpi=False):
     aln_dir = db_dir.joinpath("pham_alignments")
     aln_dir.mkdir()
 
-    create_pham_alignments(
-                    alchemist, values, aln_dir, data_cache=data_cache,
-                    threads=threads, verbose=verbose)
+    alignment.create_named_pham_alns(alchemist, values, aln_dir,
+                                     cores=cores, verbose=verbose)
 
     if use_mpi:
         physical_cores = cpu_count(logical=False)
 
-        if physical_cores < threads:
+        if physical_cores < cores:
             if verbose:
                 print("Designated process count greater than machine's "
                       "number of physical cores...\n"
                       f"STEPPING DOWN TO {physical_cores} PROCESSES")
-            threads = physical_cores
+            cores = physical_cores
 
-    hhsuitedb.create_hhsuitedb(aln_dir, db_dir, db_name, cores=threads,
+    hhsuitedb.create_hhsuitedb(aln_dir, db_dir, db_name, cores=cores,
                                verbose=verbose, versions=db_version)
 
 
@@ -244,47 +242,12 @@ def execute_make_blast_database(alchemist, values, db_dir, db_name, db_version,
 
 
 def execute_make_mmseqs_database(alchemist, values, db_dir, db_name,
-                                 data_cache=None, verbose=False, threads=1):
+                                 data_cache=None, verbose=False, cores=1):
     pass
 
 
 # HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
-def create_pham_alignments(alchemist, values, aln_dir, data_cache=None,
-                           threads=1, verbose=False):
-    if data_cache is None:
-        data_cache = {}
-
-    if verbose:
-        print("Retrieving pham gene translations...")
-    pham_ts_to_id = alignment.get_pham_gene_translations(alchemist, values)
-
-    if verbose:
-        print("Writing/aligning pham amino acid sequences to file...")
-
-    aln_path_map = alignment.create_pham_alns(
-                               alchemist, aln_dir, pham_ts_to_id,
-                               cores=threads, verbose=verbose)
-
-    pham_annotation_map = alignment.get_pham_gene_annotations(
-                                                         alchemist, values)
-
-    path_name_map = {}
-    for pham, path in aln_path_map.items():
-        annotation = pham_annotation_map.get(pham, "")
-        if annotation == "":
-            annotation = "hypothetical protein"
-
-        path_name_map[path] = f"{annotation} [pham {pham}]"
-
-    if verbose:
-        print("Adding names to pham alignments...")
-    pde_fileio.name_comment_files(path_name_map, threads=threads,
-                                  verbose=verbose)
-
-    return aln_path_map
-
-
 def create_genes_fasta(alchemist, values, fasta_dir, db_name,
                        mol_type="prot", verbose=False, data_cache=None):
     if data_cache is None:
@@ -323,18 +286,18 @@ CLUSTER_ARGS = {"tmp_dir": None,
                 "e_value": None,
                 "sens": None,
                 "steps": None,
-                "threads": None,
+                "cores": None,
                 "aln_mode": None,
                 "cov_mode": None,
                 "clu_mode": None}
 
 
-def align_centroids(cfasta_path, tmp_dir, threads=1):
+def align_centroids(cfasta_path, tmp_dir, cores=1):
     caln_path = tmp_dir.joinpath("centroid.aln")
     cmat_path = tmp_dir.joinpath("centroid.mat")
 
     alignment.clustalo(cfasta_path, caln_path, mat_out_path=cmat_path,
-                       threads=threads)
+                       cores=cores)
 
     caln = clustal.MultipleSequenceAlignment(caln_path)
     caln.parse_alignment()

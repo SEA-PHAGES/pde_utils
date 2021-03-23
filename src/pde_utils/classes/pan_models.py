@@ -12,8 +12,12 @@ from pde_utils.classes import clustal
 Base = declarative_base()
 
 NEIGHBORHOOD_EDGES_JOIN = "cluster.c.ClusterID == identity_edge.c.Source"
-SOURCE_NODE_JOIN = "identity_edge.c.Source == cluster.c.ClusterID"
-TARGET_NODE_JOIN = "identity_edge.c.Target == cluster.c.ClusterID"
+ID_SOURCE_NODE_JOIN = "identity_edge.c.Source == cluster.c.ClusterID"
+ID_TARGET_NODE_JOIN = "identity_edge.c.Target == cluster.c.ClusterID"
+
+TOWN_EDGES_JOIN = "cluster.c.ClusterID == hmm_edge.c.Source"
+HMM_SOURCE_NODE_JOIN = "hmm_edge.c.Source == cluster.c.ClusterID"
+HMM_TARGET_NODE_JOIN = "hmm_edge.c.Target == cluster.c.ClusterID"
 
 
 class Cluster(Base):
@@ -28,6 +32,9 @@ class Cluster(Base):
     NeighborhoodEdges = relationship("IdentityEdge",
                                      back_populates="SourceNode",
                                      primaryjoin=NEIGHBORHOOD_EDGES_JOIN)
+    TownEdges = relationship("HMMEdge",
+                             back_populates="SourceNode",
+                             primaryjoin=TOWN_EDGES_JOIN)
 
     def __init__(self, ClusterID=None, Spread=None, CentroidID=None,
                  CentroidSeq=None, PIM=None, MSA=None, GT=None):
@@ -126,8 +133,8 @@ class IdentityEdge(Base):
     MinDistance = Column("MinDistance", Float)
 
     SourceNode = relationship("Cluster", back_populates="NeighborhoodEdges",
-                              primaryjoin=SOURCE_NODE_JOIN)
-    TargetNode = relationship("Cluster", primaryjoin=TARGET_NODE_JOIN)
+                              primaryjoin=ID_SOURCE_NODE_JOIN)
+    TargetNode = relationship("Cluster", primaryjoin=ID_TARGET_NODE_JOIN)
 
     def __init__(self, ID=None, Source=None, Target=None, DBSeparation=None,
                  CentroidDistance=None, MinDistance=None):
@@ -140,3 +147,40 @@ class IdentityEdge(Base):
 
         self.Source_node = None
         self.Target_node = None
+
+
+class HMMEdge(Base):
+    """Class to hold data about the HMM-alignment relationship between
+    clusters."""
+    __tablename__ = "hmm_edge"
+
+    ID = Column("ID", Integer, primary_key=True)
+    Source = Column("Source", String(15), ForeignKey("cluster.ClusterID"),
+                    nullable=False)
+    Target = Column("Target", String(15), ForeignKey("cluster.ClusterID"),
+                    nullable=False)
+    Probability = Column("Probability", Float)
+    Expect = Column("Expect", Float)
+    AlignedCols = Column("AlignedCols", Integer)
+    SourceStart = Column("SourceStart", Integer)
+    SourceEnd = Column("SourceEnd", Integer)
+    TargetStart = Column("TargetStart", Integer)
+    TargetEnd = Column("TargetEnd", Integer)
+
+    SourceNode = relationship("Cluster", back_populates="TownEdges",
+                              primaryjoin=HMM_SOURCE_NODE_JOIN)
+    TargetNode = relationship("Cluster", primaryjoin=HMM_TARGET_NODE_JOIN)
+
+    def __init__(self, ID=None, Source=None, Target=None, Probability=None,
+                 Expect=None, AlignedCols=None, SourceStart=None,
+                 SourceEnd=None, TargetStart=None, TargetEnd=None):
+        self.ID = ID
+        self.Source = Source
+        self.Target = Target
+        self.Probability = Probability
+        self.Expect = Expect
+        self.AlignedCols = AlignedCols
+        self.SourceStart = SourceStart
+        self.SourceEnd = SourceEnd
+        self.TargetStart = TargetStart
+        self.TargetEnd = TargetEnd

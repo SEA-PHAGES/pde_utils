@@ -8,6 +8,8 @@ import Levenshtein
 from pdm_utils.functions import (annotation, basic, multithread, mysqldb_basic,
                                  parallelize, fileio as pdm_fileio, querying)
 
+from pde_utils.functions import (fileio as pde_fileio)
+
 
 # GLOBAL VARIABLES
 # ----------------------------------------------------------------------
@@ -504,20 +506,54 @@ def create_pham_fastas(engine, phams, aln_dir, data_cache=None, threads=1,
     return fasta_path_map
 
 
-def create_pham_alns(alchemist, working_dir, pham_ts_to_id, cores=1,
+def create_pham_alns(alchemist, phams, working_dir, cores=1,
                      mat_out=False, tree_out=False,
                      infile_type="fasta", outfile_type="fasta",
                      verbose=False):
+    if verbose:
+        print("Retrieving pham gene translations...")
+    pham_ts_to_id = get_pham_gene_translations(alchemist, phams)
+
     work_items = []
     for pham, pham_ts in pham_ts_to_id.items():
         work_items.append((working_dir, pham, pham_ts, mat_out, tree_out,
                            infile_type, outfile_type))
 
+    if verbose:
+        print("Writing/aligning pham_amino acid sequences to file...")
     fasta_paths = parallelize.parallelize(
                                 work_items, cores,
                                 create_pham_alns_process, verbose=verbose)
 
     return {pham: path for pham, path in fasta_paths}
+
+
+def create_named_pham_alns(alchemist, phams, working_dir, cores=1,
+                           mat_out=False, tree_out=False, infile_type="fasta",
+                           outfile_type="fasta", verbose=False):
+    aln_path_map = create_pham_alns(alchemist, phams, working_dir, cores=cores,
+                                    mat_out=mat_out, tree_out=tree_out,
+                                    infile_type=infile_type,
+                                    outfile_type=outfile_type, verbose=verbose)
+
+    if verbose:
+        print("Retrieving pham gene annotations...")
+    pham_annotation_map = get_pham_gene_annotations(alchemist, phams)
+
+    path_name_map = {}
+    for pham, path in aln_path_map.items():
+        annotation = pham_annotation_map.get(pham, "")
+        if annotation == "":
+            annotation = "hypothetical protein"
+
+        path_name_map[path] = f"{annotation} [pham {pham}]"
+
+    if verbose:
+        print("Adding names to pham alignments...")
+    pde_fileio.name_comment_files(path_name_map, threads=cores,
+                                  verbose=verbose)
+
+    return aln_path_map
 
 
 def create_pham_alns_process(working_dir, pham, ts_to_gs,
@@ -631,7 +667,7 @@ def create_pham_hmms_process(working_dir, pham, ts_to_gs, name,
 
 
 def create_hmms(aln_path_map, name=False, outdir=None, M=50, seq_id=90,
-                add_cons=False, seq_lim=None, threads=1, verbose=False):
+                add_cons=False, seq_lim=None, cores=1, verbose=False):
     verbose_num = 0
 
     work_items = []
@@ -653,6 +689,6 @@ def create_hmms(aln_path_map, name=False, outdir=None, M=50, seq_id=90,
         work_items.append((aln_path, hmm_path, hmm_name,
                            add_cons, seq_lim, M, seq_id, verbose_num))
 
-    parallelize.parallelize(work_items, threads, hhmake, verbose=verbose)
+    parallelize.parallelize(work_items, cores, hhmake, verbose=verbose)
 
     return hmm_path_map

@@ -9,6 +9,14 @@ from pde_utils.classes import clustal
 from pde_utils.classes.pan_models import (Base, Cluster)
 
 
+# GLOBAL VARIABLES
+# -----------------------------------------------------------------------------
+PAN_GRAPH_EDGEWEIGHTS = ["CentroidDistance", "DBSeparation", "MinDistance",
+                         "Probability", "Expect", "HMMAlnCols",
+                         "HMMAlnQueryStart", "HMMAlnQueryEnd",
+                         "HMMAlnHitStart", "HMMAlnHitEnd"]
+
+
 def build_pan_engine(pan_path):
     engine_string = f"sqlite+pysqlite:///{pan_path}"
     engine = create_engine(engine_string)
@@ -57,7 +65,22 @@ def to_networkx(alchemist):
             pan_graph.add_edge(identity_edge.Source, identity_edge.Target,
                                DBSeparation=identity_edge.DBSeparation,
                                CentroidDistance=identity_edge.CentroidDistance,
-                               MinDistance=identity_edge.MinDistance)
+                               MinDistance=identity_edge.MinDistance,
+                               Probability="", Expect="", HMMAlnCols="",
+                               HMMAlnQueryStart="", HMMAlnQueryEnd="",
+                               HMMAlnHitStart="", HMMAlnHitEnd="")
+
+        for hmm_edge in cluster.TownEdges:
+            pan_graph.add_edge(hmm_edge.Source, hmm_edge.Target,
+                               DBSeparation="", CentroidDistance="",
+                               MinDistance="",
+                               Probability=hmm_edge.Probability,
+                               Expect=hmm_edge.Expect,
+                               HMMAlnCols=hmm_edge.AlignedCols,
+                               HMMAlnQueryStart=hmm_edge.SourceStart,
+                               HMMAlnQueryEnd=hmm_edge.SourceEnd,
+                               HMMAlnHitStart=hmm_edge.TargetStart,
+                               HMMAlnHitEnd=hmm_edge.TargetEnd)
 
     return pan_graph
 

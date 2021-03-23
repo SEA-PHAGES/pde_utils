@@ -18,6 +18,14 @@ def write_graph(graph, file_format, export_path, file_name, edge_weights=[]):
     if file_format == "csv":
         readwrite.edgelist.write_edgelist(graph, file_path, delimiter=",",
                                           data=edge_weights)
+        with file_path.open(mode="r") as filehandle:
+            edgelist_lines = filehandle.readlines()
+
+        with file_path.open(mode="w") as filehandle:
+            filehandle.write(",".join(["Source", "Target"] + edge_weights))
+            filehandle.write("\n")
+            filehandle.write("".join(edgelist_lines))
+
     elif file_format == "gexf":
         readwrite.gexf.write_gexf(graph, file_path)
     elif file_format == "gml":
