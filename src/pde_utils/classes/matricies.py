@@ -2,18 +2,63 @@ import math
 import numpy as np
 
 
+def matrix_from_file(filepath, is_distance=False):
+    """Initializes a SymmetricMatrix from a file
+
+    :param filepath: The path to the distance matrix file
+    :type filepath: pathlib.Path
+    :type filepath: str
+    :param is_distance: Indicates whether a cell's value is a distance metric
+    :type is_distance: bool
+    :return: A SymmetricMatrix object from the values in the distance matrix
+    :rtype: pde_utils.classes.SymmetricMatrix
+    """
+    with open(filepath, "r") as mat:
+        # The first line of the matrix file is the number of genes
+        num_nodes = int(mat.readline())
+
+        names = list()
+        rows = list()
+
+        # All other lines build the matrix
+        for line in mat:
+            # Remove trailing whitespace and split on internal whitespace
+            line = line.rstrip().split()
+            names.append(line[0])
+            rows.append([float(x) for x in line[1:]])
+
+    # Sanity check that we parsed the matrix properly
+    if not (num_nodes == len(names) == len(rows)):
+        raise Exception
+
+    matrix = SymmetricMatrix(names, is_distance=is_distance)
+
+    for i in range(len(names)):
+        for j in range(i+1, len(names)):
+            if i+1 >= len(names):
+                continue
+
+            if i == j:
+                continue
+
+            matrix.fill_cell(i, j, rows[i][j])
+
+    return matrix
+
+
 class SymmetricMatrix:
     """
     Class to facilitate storing, creating, and manipulating symmetric matrices
     (for example pairwise identity or distance matrices).
     """
-    def __init__(self, labels):
+    def __init__(self, labels, is_distance=False):
         """
         Constructor method for a SymmetricMatrix instance.
         """
         self.labels = labels
         self.size = len(labels)
         self.matrix = np.zeros((self.size, self.size), float)
+        self.distance = is_distance
 
         self.mean = None
         self.median = None
@@ -135,14 +180,20 @@ class SymmetricMatrix:
         if 0 < self.size <= 2:
             return self.get_label_from_index(0)
         else:
-            avg_pws_identities = list()
+            avg_pws_values = list()
             for i in range(self.size):
                 row = list(self.matrix[i])
                 row.pop(i)
                 api = float(sum(row))/(self.size - 1)
-                avg_pws_identities.append(api)
-            representative_index = avg_pws_identities.index(
-                                                    max(avg_pws_identities))
+                avg_pws_values.append(api)
+
+            if self.distance:
+                repr_value = min
+            else:
+                repr_value = max
+
+            representative_index = avg_pws_values.index(
+                                                    repr_value(avg_pws_values))
             return self.get_label_from_index(representative_index)
 
     def get_average_edge(self, label):

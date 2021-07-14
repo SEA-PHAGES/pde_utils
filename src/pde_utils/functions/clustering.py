@@ -10,8 +10,8 @@ from pde_utils.classes.matricies import SymmetricMatrix
 
 # MATRIX-HANDLING FUNCTIONS
 # -----------------------------------------------------------------------------
-def build_symmetric_matrix(nodes, distance_function, names=None,
-                           cores=1, verbose=False):
+def build_symmetric_matrix(nodes, distance_function, is_distance=True,
+                           names=None, cores=1, verbose=False):
     work_items = []
 
     row_indicies = [i for i in range(len(nodes))]
@@ -37,14 +37,18 @@ def build_symmetric_matrix(nodes, distance_function, names=None,
     else:
         if len(names) != len(row_indicies):
             names = row_indicies
-    matrix = SymmetricMatrix(names)
+    matrix = SymmetricMatrix(names, is_distance=is_distance)
 
     for data in matrix_data:
         for i in range(len(data[0])):
             col = (data[2] * chunk_size) + (data[1] + i + 1)
             matrix.fill_cell(data[1], col, data[0][i])
 
-    matrix.fill_diagonal(1)
+    diagonal_value = 1
+    if is_distance:
+        diagonal_value = 0
+
+    matrix.fill_diagonal(diagonal_value)
     return matrix
 
 
@@ -296,12 +300,14 @@ def dbscan(matrix, eps, minpts, is_distance=True, return_matrix=False):
     return cluster_scheme
 
 
-def lloyds(matrix, centroids, eps=None, is_distance=True, return_matrix=False):
+def lloyds(matrix, centroids, eps=None, is_distance=True, return_matrix=False,
+           max_iterations=100):
     cent_indicies = set()
     for centroid in centroids:
         cent_indicies.add(matrix.get_index_from_label(centroid))
 
-    while True:
+    iterations = 0
+    while iterations < max_iterations:
         clustering_scheme = dict()
         cent_lookup = dict()
         for i, cent_index in enumerate(cent_indicies):
@@ -349,6 +355,8 @@ def lloyds(matrix, centroids, eps=None, is_distance=True, return_matrix=False):
             break
 
         cent_indicies = new_cent_indicies
+
+        iterations += 1
 
     if return_matrix:
         return scheme_matricies
